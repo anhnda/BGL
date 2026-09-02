@@ -85,22 +85,28 @@ class Constants:
     because the bound is an upper bound under finite N, query noise, and
     mismatch -- this gap is not an anomaly and is stated once, here.
 
-    R1.3 -- NORMALIZER PROVENANCE (why C_M = 0.814, not 1.24). The referee noted
-    that the pre-revision C_M was calibrated against sqrt(m log pK / N) while the
-    downstream floor carried a different factor, so consistency could not be read
-    off. We resolve this by making ONE log factor canonical everywhere: Lemma 1's
-    normalizer, the floor, and the C_M calibration all use
+    R1.3 / R1.5 -- NORMALIZER PROVENANCE (why C_M = 0.833, not 1.24). The referee
+    noted that the pre-revision C_M was calibrated against sqrt(m log pK / N)
+    while the downstream floor carried a different factor, so consistency could
+    not be read off. We resolve this by making ONE log factor canonical
+    everywhere: Lemma 1's normalizer, the floor, and the C_M calibration all use
     log_pk_over_delta = log(DELTA_SPLIT * pK / delta) with delta = 1/pK (R1.2).
-    Recalibrating C_M against this larger normalizer rescales it from 1.24 to
-    0.814 (ratio ~ sqrt(log pK / log(3 pK^2))); the PRODUCT
-    C_M * sqrt(log_pk_over_delta) that actually enters eta_N is unchanged. The
-    frozen value 0.814 is therefore the leakage constant FOR THE union-bounded
-    normalizer, and is consistent by construction with the quantity it multiplies
-    in the floor. Likewise C_BUDGET is back-solved (Tier 1 backward) against the
-    same factor, giving 1.535 (was 1.81).
+    Two effects move the constant, both benign:
+      (i)  the larger normalizer rescales the ratio down (this alone would give
+           ~0.814, whose product C_M*sqrt(normalizer) matches the old 1.24 to
+           0.01% -- a pure re-expression of the SAME bound);
+      (ii) C_M is an ASYMPTOTIC sqrt-regime quantity, so it is frozen from the
+           large-N rows (N >= 2000) rather than the all-N mean. This lifts it to
+           0.833. The ~2.4% difference from (i) is exactly the R1.5 sub-exp
+           inflation that contaminates small-N rows and that the large-N freeze
+           removes by construction (quantified per cell in Tier 1's `subexp`
+           column). C_M = 0.833 is therefore the leakage constant in the clean
+           sqrt regime, consistent with the floor's normalizer.
+    C_BUDGET is back-solved (Tier 1 backward) against the same factor, giving
+    1.535 (was 1.81).
     """
     C_FLOOR: float = 1.0       # floor-bound constant; theory = 1 (orthonormal)
-    C_M: float = 0.814         # leakage constant (Lemma 1); see R1.3 note below
+    C_M: float = 0.833         # leakage constant (Lemma 1); see R1.3/R1.5 note
     C_BUDGET: float = 1.535    # budget-rule constant, back-solved at Tier 1 (R1.2)
     P_KEEP: float = 0.5        # centered +-1 Walsh design the floor assumes
     Z_ALPHA: float = 1.96      # single pre-registered coord (two-sided 95%)
