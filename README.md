@@ -34,6 +34,7 @@ constructed only inside a driver's `main()` after arguments are supplied.
 | `bl_core.py` | no | The shared numerical core. Degree-`K` Walsh feature machinery (`p_K`, `feature_subsets`, `design_matrix`, `standardize_columns`, `sample_masks`), dense OLS (`ols_fit`), the floor (`sigma_eff`, `floor_value`, `certified_set`), the budget rule (`predict_budget`, `feasibility_floor`, `plan_budget`), pilot estimation of `sigma_eff` (`estimate_mismatch_from_residual`, `pilot_N0`), and the prefix-ladder diagnostic (`sweep_prefix_ladder`). **The two and only constants** live here in `CONSTANTS` and are frozen after Tier-1 calibration. |
 | `bl_models.py` | **yes** | The only Torch code. Two query-only black boxes: `TextClassifier` (sentence + token mask → class probability, `σ_obs > 0`) and `ImageClassifier` (image + cell mask → class logit, `σ_obs ≈ 0`). These map `(input, binary mask) → model output` and nothing else; all certification math is in `bl_core.py`. |
 | `tier1_synthetic.py` | no | **Tier 1 — synthetic, ground truth known.** Calibrates the two constants and proves the two-direction collapse: leakage linchpin (fixes `C_M`), forward SDR-collapse curve, backward budget-constant recovery (fixes `C_BUDGET`), and the regime grid spanning the two axes of `σ_eff`. This is the *only* place constants are fit. |
+| `tier1b_cest_transfer.py` | no | **Tier 1b — Cest transfer study (referee R1.4).** Design-only (no model): measures the forward floor constant `Cest = max{γ^{-1/2}, ‖Σ̂⁻¹‖∞}` as a function of the coordinate-to-budget ratio `pK/N`. Three questions: (Q1) confirms Cest grows with `pK` at fixed `N` (the referee's premise); (Q2) tests whether Cest **collapses onto one curve in `pK/N`** across very different `(d, K)` — the condition under which a frozen value transfers; (Q3) evaluates Cest at the actually deployed points (`d=30`/`K=1`, `d=49`/`K=1`, `K=2` enumeration) and reports the gap against the frozen `C_FLOOR`. |
 | `tier2_blackbox.py` | yes | **Tier 2 — black-box classifiers.** With constants frozen, tests the guarantee on real query-only models: forward sign-flip stability over a prefix-nested budget ladder, backward budget planning, and the **exact-β sign-correctness check** (enumerate the full `2^d` mask cube for short inputs, `d ≤ 13`, to recover the exact projection and directly verify signs). |
 | `tier2b_reseed.py` | yes | **Tier 2b — independent-reseeding audit.** Breaks the shared-mask coupling of the nested ladder: at a single fixed `N`, runs `R` independent seeds to measure (A) the cross-seed sign-violation rate vs the `1/pK` target and (B) the stratified Jaccard stability of the certified set above vs inside the unresolved band. Includes a `selftest` mode (pure NumPy, no models). |
 | `tier3_feasibility.py` | no | **Tier 3 — feasibility (Reading 2).** Shows why `K=2` costs *more* despite *lower* noise: moving pairwise structure into the fit lowers `σ_eff`, but `pK` jumps `~ d²/2`, lifting the feasibility floor `~ pK`. Produces the resolution-budget vs feasibility-floor crossing curves. |
@@ -43,7 +44,7 @@ constructed only inside a driver's `main()` after arguments are supplied.
 
 | Constant | Default | Role |
 |----------|---------|------|
-| `C_M` | `0.814` (calibrated in Tier 1 under the R1.2 split normalizer) | Leakage constant (Lemma 1); enters `σ_eff`. Was 1.24 pre-revision; the change is a normalizer redefinition (R1.3), not a re-fit — see below. |
+| `C_M` | `0.833` (frozen from Tier-1 large-N rows, N ≥ 2000) | Leakage constant (Lemma 1); enters `σ_eff`. Was 1.24 pre-revision; the change is a normalizer redefinition (R1.2/R1.3) plus a large-N freeze that removes the R1.5 sub-exp inflation — not a re-fit. See below. |
 | `C_FLOOR` | `1.0` | Floor-bound constant (forward); theory = 1 for the orthonormal ±1 design, empirical ≥ 1 expected. |
 | `C_BUDGET` | `1.535` | Budget-rule constant (backward), back-solved at Tier 1 under the split log factor (R1.2). Was 1.81 pre-revision. |
 
@@ -167,9 +168,10 @@ python tier3_feasibility.py
 python tier2b_reseed.py selftest
 ```
 
-`python tier1_synthetic.py leakage` reproduces `C_m = 0.81` (revised Table 2,
-under the R1.2 split normalizer; was 1.24 against the bare `log pK`);
-the full `all` run also recovers `C_budget ≈ 1.54` (was 1.81).
+`python tier1_synthetic.py leakage` reproduces `C_m = 0.83` (revised Table 2,
+frozen from the large-N rows under the R1.2 split normalizer; the all-N mean
+0.81 is printed alongside for transparency, and the small-N drift is the R1.5
+sub-exp term). The full `all` run also recovers `C_budget ≈ 1.54` (was 1.81).
 
 ### 2. Black-box, using the default model
 

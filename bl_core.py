@@ -216,6 +216,75 @@ def ols_fit(Z: np.ndarray, y: np.ndarray, K: int):
 
 
 # =========================================================================== #
+#  R1.4 -- design-conditioning probe: the empirical Cest and its ingredients
+#          as functions of the coordinate-to-budget ratio pK/N.
+#
+#  The referee's most serious point: Cest = max{gamma^{-1/2}, |||Ginv|||_inf}
+#  is a max ABSOLUTE ROW SUM of the inverse empirical Gram, which grows with the
+#  number of fitted coordinates pK at fixed budget N. It is calibrated at
+#  (d=30, K=1, pK=31) and then FROZEN and transferred to d=49 and to K=2 designs
+#  with far more coordinates. This probe measures gamma = lambda_min(Sigma_hat),
+#  Cinv = |||Sigma_hat^{-1}|||_inf, and Cest = max{gamma^{-1/2}, Cinv} DIRECTLY
+#  from a sampled Walsh design, so Tier 1 can chart Cest vs pK/N and test whether
+#  the frozen value is stable in that ratio (the transfer claim) rather than in
+#  d or K separately.
+# =========================================================================== #
+def op_inf_norm(M: np.ndarray) -> float:
+    """||| M |||_inf = max_i sum_j |M_ij|  (the ell_inf -> ell_inf operator
+    norm, i.e. the maximum absolute row sum)."""
+    return float(np.max(np.abs(M).sum(axis=1)))
+
+
+@dataclass
+class ConditioningProbe:
+    """R1.4 design-conditioning measurement at one (d, K, N) point.
+
+    gamma     : lambda_min(Sigma_hat)         (Assumption 1 lower bound)
+    Cinv      : |||Sigma_hat^{-1}|||_inf       (max abs row sum -- grows with pK)
+    Cest_emp  : max{gamma^{-1/2}, Cinv}        (the empirical floor constant)
+    ratio     : pK / N                         (the transfer axis)
+    well_posed: whether the Gram was invertible at this (N, pK)
+    """
+    d: int
+    K: int
+    N: int
+    pK: int
+    ratio: float
+    gamma: float
+    Cinv: float
+    Cest_emp: float
+    well_posed: bool
+
+
+def measure_conditioning(d: int, K: int, N: int, rng: np.random.Generator
+                         ) -> ConditioningProbe:
+    """Sample N Walsh masks, form the standardized degree-K Gram, and read off
+    gamma, Cinv and Cest_emp. Pure design measurement: no response, no signal --
+    Assumption 1 concerns the design only (the columns depend on masks/basis, not
+    on rho or g_rho), which is exactly why this is reference-free.
+    """
+    pk = p_K(d, K)
+    Z = sample_masks(N, d, rng)
+    X = design_matrix(Z, K)
+    Xs, _ = standardize_columns(X)
+    G = (Xs.T @ Xs) / N
+    ratio = pk / N
+    try:
+        if np.linalg.cond(G) > 1e10:
+            raise np.linalg.LinAlgError
+        Ginv = np.linalg.inv(G)
+        gamma = float(np.linalg.eigvalsh(G)[0])       # lambda_min
+        Cinv = op_inf_norm(Ginv)
+        gpow = gamma ** (-0.5) if gamma > 0 else float("inf")
+        Cest_emp = max(gpow, Cinv)
+        wp = math.isfinite(Cest_emp)
+    except np.linalg.LinAlgError:
+        gamma, Cinv, Cest_emp, wp = float("nan"), float("nan"), float("nan"), False
+    return ConditioningProbe(d=d, K=K, N=N, pK=pk, ratio=ratio, gamma=gamma,
+                             Cinv=Cinv, Cest_emp=Cest_emp, well_posed=wp)
+
+
+# =========================================================================== #
 #  THE FLOOR  (forward direction) -- one function, used everywhere
 # =========================================================================== #
 def sigma_eff(sigma_obs: float, m_hat: float, C_m: float = None) -> float:
