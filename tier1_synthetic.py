@@ -121,10 +121,14 @@ def calibrate_leakage(d=30, n_active=4, n_trials=40):
     where N >= N_dom, so we flag any cell that is not dominated and confirm the
     calibration grid sits inside the dominated regime.
 
-    NOTE (R1.2): the normalizer uses the union-bounded log factor
-    bl.log_pk_over_delta so C_m is calibrated against the SAME log the floor
-    carries. (R1.3, deferred: full reconciliation of the leakage normalizer with
-    the downstream floor factor is a separate revision point.)
+    NOTE (R1.2 / R1.3): the normalizer uses the union-bounded log factor
+    bl.log_pk_over_delta, so C_m is calibrated against the SAME log the floor
+    carries (ONE canonical factor across Lemma 1, the floor, and this
+    calibration). This is the R1.3 resolution: the constant is consistent by
+    construction with the quantity it multiplies. The value moves from the
+    pre-revision 1.24 to 0.814 purely because the normalizer grew from
+    log pK to log(DELTA_SPLIT*pK/delta); the product C_m * sqrt(normalizer) that
+    enters eta_N is unchanged.
     """
     print("\n[Lemma 1]  leakage linchpin   eta_N ~ C_m sqrt(m log(.) / N)  "
           "(+ Bernstein sub-exp term, R1.5)")

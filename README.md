@@ -43,9 +43,9 @@ constructed only inside a driver's `main()` after arguments are supplied.
 
 | Constant | Default | Role |
 |----------|---------|------|
-| `C_M` | `1.0` (calibrated to **1.24** in Tier 1) | Leakage constant (Lemma 1); enters `σ_eff`. |
+| `C_M` | `0.814` (calibrated in Tier 1 under the R1.2 split normalizer) | Leakage constant (Lemma 1); enters `σ_eff`. Was 1.24 pre-revision; the change is a normalizer redefinition (R1.3), not a re-fit — see below. |
 | `C_FLOOR` | `1.0` | Floor-bound constant (forward); theory = 1 for the orthonormal ±1 design, empirical ≥ 1 expected. |
-| `C_BUDGET` | `1.81` | Budget-rule constant (backward), back-solved at Tier 1. |
+| `C_BUDGET` | `1.535` | Budget-rule constant (backward), back-solved at Tier 1 under the split log factor (R1.2). Was 1.81 pre-revision. |
 
 `C_FLOOR` (the bound) and `C_BUDGET` (the budget invert) are deliberately kept as
 separate objects: inverting the budget with `C_FLOOR` lands below the feasibility
@@ -167,8 +167,9 @@ python tier3_feasibility.py
 python tier2b_reseed.py selftest
 ```
 
-`python tier1_synthetic.py leakage` reproduces `C_m = 1.24` (paper Table 2);
-the full `all` run also recovers `C_budget ≈ 1.81`.
+`python tier1_synthetic.py leakage` reproduces `C_m = 0.81` (revised Table 2,
+under the R1.2 split normalizer; was 1.24 against the bare `log pK`);
+the full `all` run also recovers `C_budget ≈ 1.54` (was 1.81).
 
 ### 2. Black-box, using the default model
 
