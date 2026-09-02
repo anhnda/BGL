@@ -112,6 +112,39 @@ To reproduce the **pre-revision** floor for a direct before/after comparison,
 call the floor with `split=1`:
 `bl.floor_value(s_eff, d, N, K, split=1)`.
 
+### R1.4 — the floor constant is measured per run, not frozen
+
+The referee's most serious point was that `Cest = max{γ^{-1/2}, ‖Σ̂⁻¹‖∞}` — the
+constant in the forward floor (Eq. 6) — is a max absolute row sum of the inverse
+Gram that grows with `pK`, yet was calibrated at `(d=30, K=1)` and frozen for
+`d=49` and `K=2`. The Tier-1b study (`tier1b_cest_transfer.py`) settles it
+empirically:
+
+* **Q1** confirms `Cest` grows with `pK` at fixed `N` (the concern is real).
+* **Q2** shows `Cest` does **not** collapse onto one curve in `pK/N`: at a fixed
+  ratio it still splits by `pK` (40–58% within-bin spread across `(d, K)`), so
+  no single frozen scalar is correct.
+* **Q3** measures the empirical `Cest` at the deployed points: **1.5–3.8×**, not
+  the frozen `C_FLOOR = 1.0`. A forward floor computed at `C_FLOOR = 1.0` is
+  therefore anti-conservative by those factors.
+
+**Resolution (Path A).** `Cest` is now **measured per run** from the realized
+design (`bl.realized_cest(Z, K)` / `bl.floor_from_design(Z, s_eff, K)`) — a pure,
+model-free, reference-free quantity read off the same Gram the OLS fit uses, in
+milliseconds. Every certified decision (Tier 2 forward ladder, the exact-β check,
+Tier 2b reseeding, the baseline comparison) now uses `floor_from_design`, so
+there is **no transfer claim to defend**: nothing is transferred, each run reports
+its own design constant. `C_FLOOR` is retained only as the orthonormal ideal and
+as a fallback when the Gram is too ill-conditioned to invert. The Tier-2 report
+prints, per cell, the realized `Cest` and the floor-inflation factor vs the old
+frozen-`C_FLOOR` floor, so the before/after is visible.
+
+> **Consequence to expect on re-run.** The realized floor is larger than the old
+> frozen floor by ~1.5–3.8×, most at low budgets / high `pK/N`. Certified sets
+> will shrink accordingly — this is the method reporting its honest resolution,
+> not a regression. The forward sign-flip and exact-β guarantees must be
+> re-generated under this floor before being reported.
+
 ---
 
 

@@ -227,6 +227,10 @@ def forward_backward_on_probe(probe: Probe, N_list, beta_min, K, seed=0):
     return dict(d=probe.d, pK=bl.p_K(probe.d, K), m_hat=m_hat, sigma_eff=s_eff,
                 m_raw=est.m_raw, m_negative=est.negative,     # R1.6
                 B_hat=est.B_hat, N_dom=N_dom, dominated=dominated,  # R1.5
+                cest_last=trace.cest_last,                    # R1.4 realized Cest
+                floor_last=trace.floor_last,                  # R1.4 realized floor
+                floor_last_old=trace.floor_last_old,          # R1.4 old frozen floor
+                cert_last=trace.cert_last,                    # certified count (new floor)
                 sign_flips=trace.sign_flips,                 # THE guarantee
                 n_compared=trace.n_compared,                 # its denominator
                 count_monotone=trace.count_monotone,         # diagnostic
@@ -281,12 +285,13 @@ def exact_sign_check(probe: Probe, beta_min, K, seed=0):
     N_run = min(plan.N_run, Nc)
     if N_run <= bl.p_K(probe.d, K):
         return None
-    beta_run, _, _ = bl.ols_fit(Zc[:N_run], yc[:N_run], K)
-    fl_run = bl.floor_value(s_eff, probe.d, N_run, K)
+    Zrun = Zc[:N_run]
+    beta_run, _, _ = bl.ols_fit(Zrun, yc[:N_run], K)
+    fl_run = bl.floor_from_design(Zrun, s_eff, K)         # realized Cest (R1.4)
 
     # EXACT beta on the full cube
     beta_exact, _, _ = bl.ols_fit(Zc, yc, K)
-    fl_exact = bl.floor_value(s_eff, probe.d, Nc, K)
+    fl_exact = bl.floor_from_design(Zc, s_eff, K)         # realized Cest (R1.4)
 
     n_false, n_scored = bl.false_sign_rate(beta_run, beta_exact,
                                            fl_run, fl_exact)
@@ -302,7 +307,7 @@ def report_tier2(rows, K, beta_min):
     print(f"TIER 2 -- guarantee table (K={K}, beta_min={beta_min}). "
           f"Constants frozen from Tier 1.")
     print("=" * 72)
-    print(f"  {'cell':>22} {'d':>3} {'sig_eff':>8} | "
+    print(f"  {'cell':>22} {'d':>3} {'sig_eff':>8} {'Cest':>6} {'flr×':>5} | "
           f"{'flips/cmp':>11} | {'BWD ratio':>9} {'clamp':>6} | "
           f"{'neg%':>5} {'dom%':>5}")
     flips_total = cmp_total = 0
@@ -313,7 +318,10 @@ def report_tier2(rows, K, beta_min):
         fc = f"{r['sign_flips']}/{r.get('n_compared', 0)}"
         negp = 100.0 * r.get("neg_frac", 0.0)
         domp = 100.0 * r.get("dom_frac", 1.0)
-        print(f"  {r['cell']:>22} {r['d']:>3d} {r['sigma_eff']:>8.4f} | "
+        cest = r.get("cest", float("nan"))
+        infl = r.get("floor_infl", float("nan"))
+        print(f"  {r['cell']:>22} {r['d']:>3d} {r['sigma_eff']:>8.4f} "
+              f"{cest:>6.2f} {infl:>5.2f} | "
               f"{fc:>11} | {r['ratio']:>9.3f} {clamp:>6} | "
               f"{negp:>5.0f} {domp:>5.0f}")
     ratios = [r["ratio"] for r in rows]
@@ -331,7 +339,23 @@ def report_tier2(rows, K, beta_min):
           "construction, NOT theorem evidence]")
     print(f"    count-monotone: {mono:.1f}%    set-nested: {nest:.1f}%")
 
-    # R1.5 / R1.6 correctness-fix diagnostics -- SEPARATE column above, summarized
+    # R1.4 realized-Cest note
+    if rows:
+        cests = [r.get("cest") for r in rows if r.get("cest") == r.get("cest")]
+        infls = [r.get("floor_infl") for r in rows
+                 if r.get("floor_infl") == r.get("floor_infl")]
+        if cests:
+            print("\n  [R1.4 realized floor constant]")
+            print(f"    Cest measured per run from the design (median "
+                  f"{np.median(cests):.2f}, range [{min(cests):.2f}, "
+                  f"{max(cests):.2f}]); NOT the frozen C_FLOOR=1.")
+            print(f"    floor inflation vs old frozen-C_FLOOR floor: median "
+                  f"{np.median(infls):.2f}x (range [{min(infls):.2f}, "
+                  f"{max(infls):.2f}]).")
+            print(f"    The forward floor is now a genuine upper bound; the "
+                  f"certified counts above reflect it.")
+
+    # R1.5 / R1.6 correctness-fix diagnostics
     if rows:
         neg = np.mean([r.get("neg_frac", 0.0) for r in rows]) * 100
         dom = np.mean([r.get("dom_frac", 1.0) for r in rows]) * 100
@@ -517,6 +541,12 @@ def _aggregate_cells(rows):
             clamped=any(r["clamped"] for r in rs),
             count_monotone=float(np.mean([r["count_monotone"] for r in rs])),
             set_nested=float(np.mean([r["set_nested"] for r in rs])),
+            # R1.4: realized Cest and floor inflation vs the old frozen-C_FLOOR
+            cest=float(np.median([r.get("cest_last", float("nan")) for r in rs])),
+            floor_infl=float(np.median(
+                [ (r["floor_last"] / r["floor_last_old"])
+                  for r in rs
+                  if r.get("floor_last_old") ])) if rs else float("nan"),
             # R1.6: fraction of pilot draws whose RAW mismatch was negative
             # (clipped to 0). Nonzero mainly in near-degenerate / deterministic
             # cells, exactly the conditional-clause mechanism of Theorem 1.

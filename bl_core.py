@@ -104,8 +104,21 @@ class Constants:
            sqrt regime, consistent with the floor's normalizer.
     C_BUDGET is back-solved (Tier 1 backward) against the same factor, giving
     1.535 (was 1.81).
+
+    R1.4 -- Cest IS NO LONGER A FROZEN CONSTANT (Path A). The Tier-1b transfer
+    study shows the forward floor constant Cest = max{gamma^{-1/2},
+    |||Ginv|||_inf} does NOT collapse in pK/N: at fixed ratio it still splits by
+    pK (and thus by d and K), 40-58% within-bin, and the empirical value at the
+    deployed points is 1.5-3.8x, not 1.0. A single frozen scalar is therefore
+    provably wrong. We instead MEASURE Cest per run from the realized design
+    (realized_cest / floor_from_design): it is a pure model-free design quantity
+    computable in milliseconds from the same Gram the OLS fit uses. C_FLOOR is
+    retained ONLY as the orthonormal ideal (=1) and as a fallback when the Gram
+    is too ill-conditioned to invert (in which case the fit itself fails). The
+    forward floor used for every certified decision is floor_from_design(...),
+    which needs no transfer claim because nothing is transferred.
     """
-    C_FLOOR: float = 1.0       # floor-bound constant; theory = 1 (orthonormal)
+    C_FLOOR: float = 1.0       # orthonormal IDEAL / fallback only -- see R1.4 note
     C_M: float = 0.833         # leakage constant (Lemma 1); see R1.3/R1.5 note
     C_BUDGET: float = 1.535    # budget-rule constant, back-solved at Tier 1 (R1.2)
     P_KEEP: float = 0.5        # centered +-1 Walsh design the floor assumes
@@ -284,6 +297,54 @@ def measure_conditioning(d: int, K: int, N: int, rng: np.random.Generator
                              Cinv=Cinv, Cest_emp=Cest_emp, well_posed=wp)
 
 
+def realized_cest(Z: np.ndarray, K: int) -> float:
+    """R1.4 (Path A) -- the forward floor constant Cest read off the ACTUAL
+    design that will be used for the fit, rather than a frozen scalar.
+
+    Cest = max{ gamma^{-1/2}, |||Sigma_hat^{-1}|||_inf }  on the standardized
+    degree-K Walsh Gram of THIS mask bank. Because Assumption 1 concerns the
+    design only (columns depend on masks/basis, not on rho or g_rho), this is a
+    pure, model-free, reference-free quantity computable in milliseconds from the
+    same X the OLS fit uses. The Tier-1b transfer study (R1.4) shows Cest does
+    NOT collapse in pK/N across (d,K), so no single frozen value is correct; the
+    honest floor measures Cest per run. Falls back to CONSTANTS.C_FLOOR only if
+    the Gram is too ill-conditioned to invert (the fit itself would then fail).
+    """
+    X = design_matrix(Z, K)
+    Xs, _ = standardize_columns(X)
+    N = Xs.shape[0]
+    G = (Xs.T @ Xs) / N
+    try:
+        if np.linalg.cond(G) > 1e10:
+            raise np.linalg.LinAlgError
+        Ginv = np.linalg.inv(G)
+        gamma = float(np.linalg.eigvalsh(G)[0])
+        Cinv = op_inf_norm(Ginv)
+        gpow = gamma ** (-0.5) if gamma > 0 else float("inf")
+        cest = max(gpow, Cinv)
+        return cest if math.isfinite(cest) and cest >= 1.0 else CONSTANTS.C_FLOOR
+    except np.linalg.LinAlgError:
+        return CONSTANTS.C_FLOOR
+
+
+def floor_from_design(Z: np.ndarray, s_eff: float, K: int,
+                      family_wise: bool = True, delta: float = None,
+                      split: int = None) -> float:
+    """R1.4 (Path A) -- the floor with Cest measured from the realized design Z.
+
+        floor = realized_cest(Z, K) * s_eff * sqrt(2 log(SPLIT*pK/delta) / N)
+
+    This is the honest forward floor: the design constant is read off the same
+    mask bank the coefficients are fit on, so there is no transfer claim to
+    defend. Use this everywhere a certified decision is made on a real design.
+    """
+    d = Z.shape[1]
+    N = Z.shape[0]
+    c = realized_cest(Z, K)
+    return floor_value(s_eff, d, N, K, family_wise=family_wise,
+                       C_floor=c, delta=delta, split=split)
+
+
 # =========================================================================== #
 #  THE FLOOR  (forward direction) -- one function, used everywhere
 # =========================================================================== #
@@ -399,13 +460,23 @@ class BudgetPlan:
 
 
 def plan_budget(s_eff: float, beta_min: float, d: int, K: int = 1,
-                family_wise: bool = True) -> BudgetPlan:
+                family_wise: bool = True, rng: np.random.Generator = None
+                ) -> BudgetPlan:
     """Full backward plan: predict N, clamp to feasibility, report realized
-    floor and the conservative ratio."""
+    floor and the conservative ratio.
+
+    R1.4 (Path A): the realized floor at N_run now measures Cest from a sampled
+    design of that size (floor_from_design) rather than assuming C_FLOOR=1, so
+    the reported realized_floor/beta_min ratio reflects the true design constant.
+    A fresh rng is drawn if none is supplied; the design is model-free so this
+    adds no query cost.
+    """
     N_pred = predict_budget(s_eff, beta_min, d, K, family_wise)
     feas = feasibility_floor(d, K)
     N_run = max(N_pred, feas)
-    fl = floor_value(s_eff, d, N_run, K, family_wise)
+    rng = np.random.default_rng() if rng is None else rng
+    Zdesign = sample_masks(N_run, d, rng)
+    fl = floor_from_design(Zdesign, s_eff, K, family_wise)
     return BudgetPlan(N_pred=N_pred, N_run=N_run, realized_floor=fl,
                       ratio=fl / beta_min, clamped=(N_pred < feas))
 
@@ -554,12 +625,21 @@ class DiagnosticTrace:
     floor_last: float = None
     cert_first: int = None
     cert_last: int = None
+    floor_first_old: float = None   # R1.4: old frozen-C_FLOOR floor (first rung)
+    floor_last_old: float = None    # R1.4: old frozen-C_FLOOR floor (last rung)
+    cest_first: float = None        # R1.4: realized Cest at first rung
+    cest_last: float = None         # R1.4: realized Cest at last rung
 
 
 def sweep_prefix_ladder(Zbank: np.ndarray, ybank: np.ndarray, N_list,
                         s_eff: float, d: int, K: int,
                         family_wise: bool = True) -> DiagnosticTrace:
     """Apply the single-budget theorem at each rung of a prefix-nested ladder.
+
+    R1.4 (Path A): the floor at each rung uses Cest MEASURED from that rung's
+    realized design prefix Zbank[:N] (floor_from_design), not the frozen C_FLOOR.
+    We also record the old frozen-C_FLOOR floor at the first/last rung so drivers
+    can report the before/after floor inflation.
 
     Primary output: sign_flips (the guarantee -- must be 0). Secondary outputs:
     count_monotone / set_nested (workflow diagnostics, near-guaranteed by the
@@ -569,12 +649,17 @@ def sweep_prefix_ladder(Zbank: np.ndarray, ybank: np.ndarray, N_list,
     prev_set = prev_beta = None
     prev_count = -1
     for N in N_list:
-        beta, _, _ = ols_fit(Zbank[:N], ybank[:N], K)
-        fl = floor_value(s_eff, d, N, K, family_wise)
+        Zc = Zbank[:N]
+        beta, _, _ = ols_fit(Zc, ybank[:N], K)
+        fl = floor_from_design(Zc, s_eff, K, family_wise)       # realized Cest
         cur_set, _ = certified_set(beta, fl)
         if tr.floor_first is None:
             tr.floor_first, tr.cert_first = fl, len(cur_set)
+            tr.floor_first_old = floor_value(s_eff, d, N, K, family_wise)
+            tr.cest_first = realized_cest(Zc, K)
         tr.floor_last, tr.cert_last = fl, len(cur_set)
+        tr.floor_last_old = floor_value(s_eff, d, N, K, family_wise)
+        tr.cest_last = realized_cest(Zc, K)
         if len(cur_set) < prev_count:
             tr.count_monotone = False
         if prev_set is not None and len(prev_set - cur_set) > 1:
