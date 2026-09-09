@@ -1,0 +1,183 @@
+model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+tier2-nlp K=1:  35%|███████████████████████████████████▌                                                                  | 377/1080 [04:19<14:40,  1.25s/item, tier2-nlp K=1:  35%|▎| 377/1080 [04:20<14:40,  1.25tier2-nlp K=1:  75%|████████████████████████████████████████████████████████████████████████████▏                        | 815/1080 [14:22<08:34,  1.94s/item, visobert/mask d=34 flips=0 rattier2-nlp K=1:  75%|▊| 815/1080 [14:25<08:34,  1.94s/item, visobert/mask d=39 fl                                                                                tier2-nlp K=1: 100%|█| 1080/1080 [21:52<00:00,  1.21s/item, visobert/zero d=18 f
+
+========================================================================
+TIER 2 -- guarantee table (K=1, beta_min=0.02). Constants frozen from Tier 1.
+========================================================================
+                    cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
+         distilbert/mask  15   0.1567   1.26  1.26 |      0/2085 |     0.874    yes |     0   100
+          distilbert/pad  15   0.1553   1.26  1.26 |      0/2230 |     0.884    yes |     0    98
+         distilbert/zero  15   0.1219   1.26  1.26 |      0/2048 |     0.922    yes |     0    94
+            roberta/mask  15   0.1593   1.25  1.25 |      0/1867 |     0.876    yes |     0   100
+             roberta/pad  15   0.1425   1.25  1.25 |      0/2020 |     0.917        |     0   100
+            roberta/zero  15   0.1560   1.25  1.25 |      0/1909 |     0.890        |     0    99
+           visobert/mask  24   0.1973   1.40  1.40 |      0/2458 |     0.930        |     0   100
+            visobert/pad  24   0.1803   1.40  1.40 |      0/2014 |     0.943    yes |     0    99
+           visobert/zero  24   0.0834   1.40  1.40 |      3/1684 |     1.015    yes |     0    84
+
+  FORWARD  : certified sign flips = 3 / 18315 certified-in-both-budget checks  (rate 0.0002; target 0)
+  BACKWARD : realized/target ratio  median 0.917  range [0.874, 1.015]  (target <= 1)
+
+  [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
+    count-monotone: 98.9%    set-nested: 99.1%
+
+  [R1.4 realized floor constant]
+    Cest measured per run from the design (median 1.26, range [1.25, 1.40]); NOT the frozen C_FLOOR=1.
+    floor inflation vs old frozen-C_FLOOR floor: median 1.26x (range [1.25, 1.40]).
+    The forward floor is now a genuine upper bound; the certified counts above reflect it.
+
+  [correctness-fix diagnostics]
+    R1.6 negative-clip fraction (raw m_hat<0, then clipped to 0): 0.0% of items
+         clipping is conservative (raises sigma_eff); nonzero mainly in degenerate/deterministic cells.
+    R1.5 Bernstein-domination: 97.2% of items run at N >= (2B^2/9m) log(.), sub-exp term dominated.
+
+
+tier2-image K=1:  45%|████████████████████████████████████████████▏                                                      | 201/450 [20:15<20:44,  5.00s/item, retier2-image K=1:  45%|▍| 201/450 [20:20<20:44,  5.0tier2-image K=1: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████| 450/450 [1:18:56<00:00, 10.53s/item, vit_b_16/mean d=49 flips=0 ratio=1.01 | tot flips 0]
+
+========================================================================
+TIER 2 -- guarantee table (K=1, beta_min=0.05). Constants frozen from Tier 1.
+========================================================================
+                    cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
+          resnet50/white  49   0.7612   1.79  1.79 |       0/930 |     0.978        |     0   100
+          resnet50/black  49   0.7930   1.79  1.79 |       0/828 |     0.974        |     0   100
+           resnet50/mean  49   0.6710   1.79  1.79 |       0/689 |     1.024        |     0   100
+          resnet18/white  49   1.2130   1.79  1.79 |      0/1129 |     0.857        |     0   100
+          resnet18/black  49   1.2491   1.79  1.79 |       0/974 |     0.859        |     0   100
+           resnet18/mean  49   1.2023   1.79  1.79 |      0/1256 |     0.855        |     0   100
+          vit_b_16/white  49   0.6601   1.79  1.79 |       0/617 |     1.053        |     0   100
+          vit_b_16/black  49   0.6126   1.79  1.79 |       0/557 |     1.133        |     0   100
+           vit_b_16/mean  49   0.6176   1.79  1.79 |       0/624 |     1.105        |     0   100
+
+  FORWARD  : certified sign flips = 0 / 7604 certified-in-both-budget checks  (rate 0.0000; target 0)
+  BACKWARD : realized/target ratio  median 0.978  range [0.855, 1.133]  (target <= 1)
+
+  [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
+    count-monotone: 100.0%    set-nested: 100.0%
+
+  [R1.4 realized floor constant]
+    Cest measured per run from the design (median 1.79, range [1.79, 1.79]); NOT the frozen C_FLOOR=1.
+    floor inflation vs old frozen-C_FLOOR floor: median 1.79x (range [1.79, 1.79]).
+    The forward floor is now a genuine upper bound; the certified counts above reflect it.
+
+  [correctness-fix diagnostics]
+    R1.6 negative-clip fraction (raw m_hat<0, then clipped to 0): 0.0% of items
+         clipping is conservative (raises sigma_eff); nonzero mainly in degenerate/deterministic cells.
+    R1.5 Bernstein-domination: 100.0% of items run at N >= (2B^2/9m) log(.), sub-exp term dominated.
+(xfrt128) anhnda@xaibk1:~/BGL$ 
+
+python tier2_blackbox.py image --beta_min 0.05 --N_ladder 512,1000,2000,4000 \
+    --images_dir image_samples --glob "*.JPEG"
+tier2-image K=1:  45%|████████████████████████████████████████████▏                                                      | 201/450 [20:15<20:44,  5.00s/item, retier2-image K=1:  45%|▍| 201/450 [20:20<20:44,  5.0tier2-image K=1: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████| 450/450 [1:18:56<00:00, 10.53s/item, vit_b_16/mean d=49 flips=0 ratio=1.01 | tot flips 0]
+
+========================================================================
+TIER 2 -- guarantee table (K=1, beta_min=0.05). Constants frozen from Tier 1.
+========================================================================
+                    cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
+          resnet50/white  49   0.7612   1.79  1.79 |       0/930 |     0.978        |     0   100
+          resnet50/black  49   0.7930   1.79  1.79 |       0/828 |     0.974        |     0   100
+           resnet50/mean  49   0.6710   1.79  1.79 |       0/689 |     1.024        |     0   100
+          resnet18/white  49   1.2130   1.79  1.79 |      0/1129 |     0.857        |     0   100
+          resnet18/black  49   1.2491   1.79  1.79 |       0/974 |     0.859        |     0   100
+           resnet18/mean  49   1.2023   1.79  1.79 |      0/1256 |     0.855        |     0   100
+          vit_b_16/white  49   0.6601   1.79  1.79 |       0/617 |     1.053        |     0   100
+          vit_b_16/black  49   0.6126   1.79  1.79 |       0/557 |     1.133        |     0   100
+           vit_b_16/mean  49   0.6176   1.79  1.79 |       0/624 |     1.105        |     0   100
+
+  FORWARD  : certified sign flips = 0 / 7604 certified-in-both-budget checks  (rate 0.0000; target 0)
+  BACKWARD : realized/target ratio  median 0.978  range [0.855, 1.133]  (target <= 1)
+
+  [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
+    count-monotone: 100.0%    set-nested: 100.0%
+
+  [R1.4 realized floor constant]
+    Cest measured per run from the design (median 1.79, range [1.79, 1.79]); NOT the frozen C_FLOOR=1.
+    floor inflation vs old frozen-C_FLOOR floor: median 1.79x (range [1.79, 1.79]).
+    The forward floor is now a genuine upper bound; the certified counts above reflect it.
+
+  [correctness-fix diagnostics]
+    R1.6 negative-clip fraction (raw m_hat<0, then clipped to 0): 0.0% of items
+         clipping is conservative (raises sigma_eff); nonzero mainly in degenerate/deterministic cells.
+    R1.5 Bernstein-domination: 100.0% of items run at N >= (2B^2/9m) log(.), sub-exp term dominated.
+
+
+python tier2_blackbox.py exact-nlp --K 2 --subset 10 --max_d 13 \
+    --sentences text_samples/sst2_short.txt
+  enumerating full cube when d<=13 (<= 8192 calls/probe); larger d are SKIPPED (no exact beta -- no random-bank stand-in).                                           
+exact-nlp K=2:  32%|█████████████████████████▏                                                    | 29/90 [00:13<00:06,  8.83item/s, distilbert/zero d=15 > 13: SKIP]
+Some weights of the model checkpoint at textattack/roberta-base-SST-2 were not used when initializing RobertaForSequenceClassification: ['roberta.pooler.dense.bias', 'roberta.pooler.dense.weight']
+- This IS expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+exact-nlp K=2: 100%|████████████████████████████████████████████████████████████████████████████████| 90/90 [00:32<00:00,  2.81item/s, visobert/zero d=22 > 13: SKIP]
+
+========================================================================
+EXACT-BETA sign-correctness (NLP K=2)
+========================================================================
+  enumerable probes: 21  (d in [7, 13], exact cube 2^d); 69 probes skipped (d > 13)
+  certified coords : 110
+  false signs      : 0
+  false-sign rate  : 0.0000   (Theorem 1 forward claim, exact ground truth; target 0)
+
+
+
+python tier2b_reseed.py nlp --backbones visobert --references zero --N 2000 
+python tier2b_reseed.py image --backbones resnet50 --references mean --N 2000 
+tier2-nlp K=1: 100%|██████████████████████████████████████████████████████████████████████| 120/120 [00:10<00:00, 11.78item/s, visobert/zero d=18 (not identifiable)]
+
+========================================================================
+TIER 2 -- guarantee table (K=1, beta_min=0.02). Constants frozen from Tier 1.
+========================================================================
+                    cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
+
+  FORWARD  : certified sign flips = 0 / 0 certified-in-both-budget checks  (rate nan; target 0)
+
+  [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
+    count-monotone: 0.0%    set-nested: 0.0%
+tier2-image K=1: 100%|███████████████████████████████████████████████████████████████████████████| 50/50 [00:01<00:00, 29.82item/s, resnet50/mean (not identifiable)]
+
+========================================================================
+TIER 2 -- guarantee table (K=1, beta_min=0.05). Constants frozen from Tier 1.
+========================================================================
+                    cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
+
+  FORWARD  : certified sign flips = 0 / 0 certified-in-both-budget checks  (rate nan; target 0)
+
+  [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
+    count-monotone: 0.0%    set-nested: 0.0%
+
+
+ python tier3_feasibility.py
+========================================================================
+TIER 3 -- FEASIBILITY (Reading 2): why K=2 costs more, less noise
+========================================================================
+  d=18, n_active=4, m_resid=0.05, sigma_obs=0.05, beta_min=0.02
+  C_budget=1.535 (frozen from Tier 1)
+
+    K     pK  sigma_eff     N_res   N_feas     N_run       binds
+    1     19     0.2358      4578       57      4578  resolution
+    2    172     0.2273      6936      516      6936  resolution
+
+  READING:
+    sigma_eff FALLS K=1 -> K=2 : 0.2358 -> 0.2273 (pairwise moves from mismatch into the fit)
+    pK JUMPS  19 -> 172  (~ d^2/2), lifting the feasibility floor
+    => running budget RISES 4578 -> 6936 DESPITE lower noise.
+    The certificate draws the identifiability line: if budget << p2=172,
+    dense pairwise LIME is not identifiable and must not be read as an interaction map.
+
+  [figure data] feasibility floor vs resolution budget across d (K=2)
+     d      p2  sigma_eff     N_res   N_feas       binds
+     8      37     0.2171      4618      111  resolution
+    12      79     0.2449      6954      237  resolution
+    16     137     0.2280      6698      411  resolution
+    20     211     0.2254      7066      633  resolution
+    24     301     0.2195      7100      903  resolution
+    30     466     0.2173      7447     1398  resolution
+
+
+ python baselines.py image --backbones resnet50 --references mean --N 2000 --B 200
+baselines-image K=1:   0%|                                                                                                                   | 0/1 [00:01<?, ?item/s]
+
+========================================================================
+FLOOR vs BOOTSTRAP vs WALD  (Image K=1, shared bank N=2000, B=200)
+========================================================================
+  no well-posed probes.
