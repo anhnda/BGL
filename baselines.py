@@ -92,6 +92,46 @@ def certify_wald(Z, y, K, sigma_obs, alpha=0.05):
     return cert, all_cert
 
 
+def certify_wald_residual(Z, y, K, alpha=0.05):
+    """R1.10 -- the FAIR Wald comparator the referee asked for.
+
+    The naive Wald above builds its standard error from sigma_obs only, so on a
+    deterministic backbone (sigma_obs -> 0) every SE collapses and it certifies
+    everything -- a straw man. The fair competitor estimates the error variance
+    from the FITTED RESIDUALS, which absorb the surrogate mismatch:
+
+        s^2 = RSS / (N - pK)             (OLS residual variance, mismatch included)
+        SE_S = s * sqrt( (Ginv)_SS / N ) / scale_S
+        certify S iff |beta_S| > z_{1-alpha/2} * SE_S.
+
+    Because the residual variance sees the deterministic mismatch that a
+    query-noise-only SE cannot, this Wald does NOT degenerate as sigma_obs -> 0.
+    It is the honest single-coordinate interval; the floor's remaining advantages
+    over it are SIMULTANEITY (it corrects for multiplicity in closed form) and
+    BUDGET-INVERTIBILITY (Eq. 8), not merely the presence of a mismatch term.
+    Returns (boolean mask, all_certified_flag).
+    """
+    d = Z.shape[1]
+    X = bl.design_matrix(Z, K)
+    N = X.shape[0]
+    pk = bl.p_K(d, K)
+    Xs, scale = bl.standardize_columns(X)
+    G = (Xs.T @ Xs) / N
+    Ginv = np.linalg.inv(G)
+    y_c = y - y.mean()
+    beta_std = Ginv @ (Xs.T @ y_c) / N
+    beta = beta_std / scale
+    # residual variance from the actual fit (absorbs mismatch + query noise)
+    resid = y_c - Xs @ beta_std
+    dof = max(N - pk, 1)
+    s2 = float((resid ** 2).sum() / dof)
+    z = abs(_z_quantile(1 - alpha / 2))
+    se_std = math.sqrt(s2) * np.sqrt(np.diag(Ginv) / N)
+    se = se_std / scale
+    cert = np.abs(beta) > z * se
+    return cert, bool(cert.all())
+
+
 def certify_bootstrap(Z, y, K, B, rng, alpha=0.05):
     """Per-coordinate percentile bootstrap: resample (mask,response) pairs with
     replacement, refit B times, certify S iff its [alpha/2, 1-alpha/2]
@@ -149,18 +189,28 @@ def compare_on_probe(probe: Probe, N, K, B, seed=0):
         return None
 
     c_floor = certify_floor(beta, s_eff, probe.d, N, K, Z=Z)
-    c_wald, wald_all = certify_wald(Z, y, K, probe.sigma_obs)
+    c_wald, wald_all = certify_wald(Z, y, K, probe.sigma_obs)      # naive (straw man)
+    c_waldr, waldr_all = certify_wald_residual(Z, y, K)           # R1.10 fair Wald
     c_boot = certify_bootstrap(Z, y, K, B, np.random.default_rng(seed + 7))
 
     p = c_floor.size
     floor_only = int((c_floor & ~c_boot).sum())     # floor yes, bootstrap no
     boot_only = int((~c_floor & c_boot).sum())       # bootstrap yes, floor no
     agree = int((c_floor == c_boot).sum())
+    # fair-Wald agreement with the floor, and how often the floor is the more
+    # conservative (simultaneous) rule against the fair single-coord interval
+    agree_wr = int((c_floor == c_waldr).sum())
+    waldr_only = int((~c_floor & c_waldr).sum())     # fair-Wald yes, floor no
+    floor_only_wr = int((c_floor & ~c_waldr).sum())  # floor yes, fair-Wald no
     return dict(d=probe.d, p=p, sigma_obs=probe.sigma_obs,
                 floor_cert=int(c_floor.sum()),
                 boot_cert=int(c_boot.sum()),
                 wald_cert=int(c_wald.sum()),
                 wald_all=wald_all,
+                waldr_cert=int(c_waldr.sum()),
+                waldr_all=waldr_all,
+                agree_wr=agree_wr, waldr_only=waldr_only,
+                floor_only_wr=floor_only_wr,
                 floor_only=floor_only, boot_only=boot_only,
                 agree=agree)
 
@@ -183,8 +233,17 @@ def report(rows, setting, N, B):
     boot_mean = float(np.mean([r["boot_cert"] for r in rows]))
     agree_pct = 100.0 * agree_tot / p_tot if p_tot else float("nan")
     wald_all = sum(r["wald_all"] for r in rows)
+    waldr_all = sum(r["waldr_all"] for r in rows)
+    waldr_mean = float(np.mean([r["waldr_cert"] for r in rows]))
+    agree_wr_tot = sum(r["agree_wr"] for r in rows)
+    agree_wr_pct = 100.0 * agree_wr_tot / p_tot if p_tot else float("nan")
+    waldr_only = float(np.mean([r["waldr_only"] for r in rows]))
+    floor_only_wr = float(np.mean([r["floor_only_wr"] for r in rows]))
+    sigma_obs_mean = float(np.mean([r["sigma_obs"] for r in rows]))
 
     print(f"  coords (total over items)     : {p_tot}")
+    print(f"  mean sigma_obs over items     : {sigma_obs_mean:.4f}"
+          f"  ({'deterministic backbone' if sigma_obs_mean < 1e-6 else 'probabilistic backbone'})")
     print(f"  floor vs bootstrap agreement  : {agree_pct:.1f}%")
     print(f"  floor certified  (mean/item)  : {floor_mean:.1f}")
     print(f"  bootstrap cert.  (mean/item)  : {boot_mean:.1f}")
@@ -194,12 +253,36 @@ def report(rows, setting, N, B):
     print(f"    -> all disagreement is bootstrap-only certification of "
           f"near-floor coords;\n       the floor is the more conservative "
           f"simultaneous rule.")
-    print(f"  Wald certified-ALL items (sigma_obs~0 degeneracy): "
+
+    print("\n  --- Wald comparison (R1.10) ---")
+    print(f"  [naive Wald, sigma_obs SE only -- the straw man]")
+    print(f"    certified-ALL items (sigma_obs~0 degeneracy): "
           f"{wald_all}/{len(rows)}")
     if wald_all:
-        print(f"    -> on the deterministic backbone Wald certifies every "
-              f"coordinate\n       regardless of evidence; the mismatch term "
-              f"of sigma_eff repairs this.")
+        print(f"    -> on the deterministic backbone the naive Wald certifies "
+              f"every coordinate\n       regardless of evidence; its SE sees no "
+              f"mismatch. This is the degeneracy\n       the mismatch term of "
+              f"sigma_eff repairs -- but it is not a fair competitor.")
+    print(f"  [fair Wald, SE from FITTED RESIDUALS -- absorbs mismatch (R1.10)]")
+    print(f"    fair-Wald certified (mean/item)            : {waldr_mean:.1f}")
+    print(f"    fair-Wald certified-ALL items              : {waldr_all}/{len(rows)}")
+    print(f"    floor vs fair-Wald agreement               : {agree_wr_pct:.1f}%")
+    print(f"    FAIR-WALD-ONLY (fair-Wald yes, floor no, mean/item): {waldr_only:.2f}")
+    print(f"    FLOOR-ONLY vs fair-Wald (floor yes, fW no, mean/item): {floor_only_wr:.2f}")
+    print(f"    -> the fair Wald does NOT degenerate as sigma_obs->0 (its SE "
+          f"sees the\n       mismatch through the residuals). Where it still "
+          f"over-certifies vs the\n       floor, that gap is the MULTIPLICITY "
+          f"correction the simultaneous floor\n       carries in closed form "
+          f"(sqrt(2 log pK)) and the single-coord interval omits.\n       The "
+          f"floor's remaining edge is simultaneity + budget-invertibility (Eq.8),"
+          f"\n       not the mismatch term alone.")
+
+    print("\n  NOTE (bootstrap limitation, R1.10): the bootstrap resamples the "
+          "SAME mask\n       bank, so on a deterministic backbone every resample "
+          "sees the identical\n       deterministic mismatch -- the bootstrap "
+          "spread captures sampling of the\n       masks, NOT the mismatch bias, "
+          "and so also cannot see the deterministic\n       mismatch the fair "
+          "Wald absorbs through its residual variance.")
 
 
 # =========================================================================== #
@@ -249,6 +332,11 @@ def run_image(args):
     refs = (list(M.IMAGE_REFERENCES) if args.references == "all"
             else args.references.split(","))
     paths = sorted(glob.glob(os.path.join(args.images_dir, args.glob)))
+    if not paths:
+        print(f"[baselines-image] NO IMAGES matched "
+              f"{os.path.join(args.images_dir, args.glob)!r}. "
+              f"Pass --images_dir / --glob to point at real files.")
+        return
     paths = paths[:args.subset] if args.subset else paths
     rows = []
     total = len(backbones) * len(refs) * len(paths)
