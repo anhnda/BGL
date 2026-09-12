@@ -671,3 +671,200 @@ def sweep_prefix_ladder(Zbank: np.ndarray, ybank: np.ndarray, N_list,
                                  for i in inter) if inter else 0
         prev_set, prev_beta, prev_count = cur_set, beta, len(cur_set)
     return tr
+
+# =========================================================================== #
+#  TIER 2b -- INDEPENDENT-RESEEDING AUDIT (the probability statement)
+#
+#  The nested prefix ladder reuses ONE mask bank, so its stability is partly
+#  built in by Corollary 2. Theorem 1, by contrast, is a statement over
+#  INDEPENDENT draws ("with probability >= 1 - delta"), which a single bank
+#  cannot test. Here we fix one budget N and draw R independent mask banks per
+#  probe, and measure the quantities the nested ladder cannot:
+#
+#    (A) cross-seed SIGN-DISAGREEMENT rate among certified coordinates, whose
+#        target is <= 1/pK at delta = 1/pK  (a PER-COORDINATE rate);
+#
+#    (R1.7) the PER-RUN, SIMULTANEOUS failure rate -- the fraction of independent
+#        draws in which ANY certified coordinate disagrees with the cross-seed
+#        reference sign. This is the faithful test of Theorem 1's failure event,
+#        which is per-run and simultaneous: on the failure event arbitrarily many
+#        coordinates may be wrong at once, so an item-level (any-coordinate) rate,
+#        not the per-coordinate rate (A), is what the "with probability 1 - delta"
+#        clause actually bounds. Target <= delta = 1/pK.
+#
+#    (B) the STRATIFIED Jaccard stability of the certified set across independent
+#        seeds, split by whether a coordinate's cross-seed median magnitude lies
+#        ABOVE 2*floor or INSIDE the unresolved band [floor, 2*floor]. Definition
+#        1 predicts churn is confined to the band: above-band membership should be
+#        near-perfectly stable, in-band membership need not be.
+#
+#  The reference sign for a coordinate is its cross-seed MAJORITY sign (the best
+#  available proxy for sgn(beta_S) when the exact projection is unavailable). A
+#  "violation" is a certified coordinate whose per-seed sign differs from that
+#  majority. This measures cross-seed STABILITY, not correctness -- only the
+#  enumeration tier (exact beta) tests correctness; the driver reports it as such.
+# =========================================================================== #
+@dataclass
+class ReseedResult:
+    """Outcome of the independent-reseeding audit for one probe.
+
+    Per-coordinate (A):
+      n_cert_checks : total (seed, certified-coord) pairs scored
+      n_viol        : how many of those disagree with the cross-seed majority
+      viol_rate     : n_viol / n_cert_checks           (target <= 1/pK)
+
+    Per-run / item-level (R1.7):
+      n_runs        : number of seeds that certified at least one coordinate
+      n_run_fail    : seeds with >= 1 disagreeing certified coordinate
+      run_fail_rate : n_run_fail / n_runs              (target <= delta = 1/pK)
+
+    Set stability (B), band-stratified mean pairwise Jaccard:
+      jaccard_above : over coords with cross-seed median |beta| > 2*floor
+      jaccard_band  : over coords with cross-seed median |beta| in [floor, 2floor]
+      n_above       : mean per-seed count of above-band certified coords
+      n_band        : mean per-seed count of in-band certified coords
+
+      target_1_over_pK : 1/pK, the audited bound
+      well_posed       : whether >= 2 seeds were identifiable (else all nan)
+    """
+    pK: int
+    target_1_over_pK: float
+    n_cert_checks: int
+    n_viol: int
+    viol_rate: float
+    n_runs: int
+    n_run_fail: int
+    run_fail_rate: float
+    jaccard_above: float
+    jaccard_band: float
+    n_above: float
+    n_band: float
+    well_posed: bool
+
+
+def _mean_pairwise_jaccard(sets):
+    """Mean Jaccard over all unordered seed pairs. Two empty sets count as a
+    perfect match (Jaccard 1.0): the run agreed that nothing is in that stratum,
+    which is stability, not disagreement. Pairs are skipped only when fewer than
+    two seeds exist."""
+    m = len(sets)
+    if m < 2:
+        return float("nan")
+    tot, npair = 0.0, 0
+    for i in range(m):
+        for j in range(i + 1, m):
+            a, b = sets[i], sets[j]
+            union = a | b
+            tot += 1.0 if not union else len(a & b) / len(union)
+            npair += 1
+    return tot / npair if npair else float("nan")
+
+
+def reseed_audit(query_fn, d, sigma_obs, N, R, K, s_eff,
+                 seed0=0, family_wise=True, p_keep=None):
+    """Run the independent-reseeding audit on one probe.
+
+    query_fn(Z): (N,d) binary masks -> (N,) model outputs -- the ONLY model
+                 dependence; everything else is pure design/numeric, so this
+                 function is model-free and the driver supplies the closure.
+    s_eff      : the pilot effective scale for this probe (held fixed across
+                 seeds, exactly as deployed: the pilot is run once, then the
+                 certificate is applied to each independent draw).
+
+    Returns a ReseedResult. Per seed r we draw an INDEPENDENT bank Z^(r) (seeded
+    seed0 + r), fit dense OLS, measure the realized floor from that design
+    (floor_from_design -- R1.4), and record the certified set and per-coordinate
+    signs. We then (1) take each coordinate's cross-seed MAJORITY sign over the
+    seeds that certified it, (2) score per-coordinate and per-run disagreements
+    against that majority, and (3) compute band-stratified Jaccard using each
+    coordinate's cross-seed MEDIAN magnitude to assign it to the above-2floor or
+    in-band stratum.
+    """
+    pk = p_K(d, K)
+    target = 1.0 / pk
+    pcount = len(feature_subsets(d, K))     # number of fitted (non-intercept) coords
+
+    if N <= pk:
+        return ReseedResult(pk, target, 0, 0, float("nan"), 0, 0, float("nan"),
+                            float("nan"), float("nan"), float("nan"),
+                            float("nan"), well_posed=False)
+
+    betas = []          # per-seed beta vectors (length pcount)
+    floors = []         # per-seed realized floor
+    cert_sets = []      # per-seed set of certified coord indices
+    for r in range(R):
+        rng = np.random.default_rng(seed0 + r)
+        Z = sample_masks(N, d, rng, p_keep)
+        y = query_fn(Z)
+        try:
+            beta, _, _ = ols_fit(Z, y, K)
+        except np.linalg.LinAlgError:
+            continue
+        fl = floor_from_design(Z, s_eff, K, family_wise)
+        cset, _ = certified_set(beta, fl)
+        betas.append(beta)
+        floors.append(fl)
+        cert_sets.append(cset)
+
+    R_ok = len(betas)
+    if R_ok < 2:
+        return ReseedResult(pk, target, 0, 0, float("nan"), 0, 0, float("nan"),
+                            float("nan"), float("nan"), float("nan"),
+                            float("nan"), well_posed=False)
+
+    B = np.stack(betas, axis=0)                 # (R_ok, pcount)
+    signs = np.sign(B)                          # (R_ok, pcount)
+    med_floor = float(np.median(floors))
+
+    # Cross-seed reference sign per coordinate = majority over seeds that
+    # certified it (fall back to majority over all seeds if none certified it,
+    # which then contributes no certified checks anyway).
+    ref_sign = np.zeros(pcount)
+    for c in range(pcount):
+        cert_mask = np.array([c in cs for cs in cert_sets])
+        src = signs[cert_mask, c] if cert_mask.any() else signs[:, c]
+        s = src.sum()
+        ref_sign[c] = 1.0 if s > 0 else (-1.0 if s < 0 else 1.0)
+
+    # (A) per-coordinate + (R1.7) per-run disagreement among certified coords.
+    n_cert_checks = 0
+    n_viol = 0
+    n_runs = 0
+    n_run_fail = 0
+    for r in range(R_ok):
+        cset = cert_sets[r]
+        if not cset:
+            continue
+        n_runs += 1
+        run_has_viol = False
+        for c in cset:
+            n_cert_checks += 1
+            if signs[r, c] != ref_sign[c]:
+                n_viol += 1
+                run_has_viol = True
+        if run_has_viol:
+            n_run_fail += 1
+
+    viol_rate = (n_viol / n_cert_checks) if n_cert_checks else float("nan")
+    run_fail_rate = (n_run_fail / n_runs) if n_runs else float("nan")
+
+    # (B) band-stratified Jaccard. Assign each coord to a stratum by its
+    # cross-seed MEDIAN magnitude relative to the median floor.
+    med_mag = np.median(np.abs(B), axis=0)      # (pcount,)
+    above_coords = set(np.where(med_mag > 2.0 * med_floor)[0].tolist())
+    band_coords = set(np.where((med_mag >= med_floor) &
+                               (med_mag <= 2.0 * med_floor))[0].tolist())
+
+    above_sets = [cs & above_coords for cs in cert_sets]
+    band_sets = [cs & band_coords for cs in cert_sets]
+    jac_above = _mean_pairwise_jaccard(above_sets)
+    jac_band = _mean_pairwise_jaccard(band_sets)
+    n_above = float(np.mean([len(s) for s in above_sets]))
+    n_band = float(np.mean([len(s) for s in band_sets]))
+
+    return ReseedResult(
+        pK=pk, target_1_over_pK=target,
+        n_cert_checks=n_cert_checks, n_viol=n_viol, viol_rate=viol_rate,
+        n_runs=n_runs, n_run_fail=n_run_fail, run_fail_rate=run_fail_rate,
+        jaccard_above=jac_above, jaccard_band=jac_band,
+        n_above=n_above, n_band=n_band, well_posed=True)
