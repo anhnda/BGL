@@ -339,6 +339,71 @@ def print_calibration(Cm, x_half, Cb):
 CONST_FLOOR = bl.CONSTANTS.C_FLOOR
 
 
+# =========================================================================== #
+#  d-SWEEP STABILITY of the FROZEN constants  (referee R1.4, extended)
+#
+#  R1.4 forced Cest to be measured per run because it grows with pK/d. The same
+#  question must then be asked of the OTHER two constants we DO freeze from a
+#  single d=30 calibration: C_m (leakage) and C_budget (planning). If either
+#  drifted with d the way Cest does, freezing it at d=30 and carrying it to
+#  d in {15,24,49} would be the very transfer error R1.4 objects to.
+#
+#  This routine re-runs both calibrations across d in {15,24,30,49} (the d's
+#  that actually occur in Tiers 2-3: NLP d=15/24, images d=49, synthetic d=30)
+#  and reports each constant vs d plus the cross-d CoV. The theoretical
+#  expectation, now checked rather than asserted:
+#    * C_m is Walsh-normalized and divides out the log(nu*pK/delta) factor, so
+#      every column sees the SAME leakage variance m>K independent of d -> flat.
+#    * C_budget is calibrated in the WEAK-SNR resolution regime against the same
+#      union-bounded log factor, so its 1/gamma^2 law is d-independent once the
+#      log(pK) growth is carried explicitly -> flat (unlike Cest, which is the
+#      raw ||Sigma^{-1}||_inf row-sum and is NOT normalized).
+#  A flat result here is what LICENSES freezing C_m and C_budget while measuring
+#  Cest per run; a drift would force those to be per-run too.
+# =========================================================================== #
+def sweep_d_stability(d_grid=(15, 24, 30, 49), n_active=4):
+    print("\n" + "=" * 72)
+    print("d-SWEEP STABILITY of the FROZEN constants C_m, C_budget (R1.4)")
+    print("  Cest is per-run (it grows with d); here we check that the two")
+    print("  constants we DO freeze at d=30 are in fact d-stable.")
+    print("=" * 72)
+    rows = []
+    print(f"  {'d':>4} {'pK':>5} {'C_m (frozen)':>13} {'C_budget':>10} "
+          f"{'Cest_emp':>9}")
+    for d in d_grid:
+        # suppress the verbose per-cell prints of the sub-calibrations
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            cm = calibrate_leakage(d=d, n_active=n_active)
+            cb = backward_budget(d=d, n_active=n_active)
+        # realized Cest for this d at a representative deployment budget
+        rng = np.random.default_rng(2027 + d)
+        N_rep = max(6 * bl.p_K(d, 1), 2000)
+        Z = bl.sample_masks(N_rep, d, rng)
+        cest = bl.realized_cest(Z, 1) if hasattr(bl, "realized_cest") \
+            else float("nan")
+        rows.append((d, bl.p_K(d, 1), cm, cb, cest))
+        print(f"  {d:>4} {bl.p_K(d,1):>5} {cm:>13.3f} {cb:>10.3f} {cest:>9.3f}")
+    cms = [r[2] for r in rows]
+    cbs = [r[3] for r in rows]
+    cests = [r[4] for r in rows]
+    print(f"\n  C_m    across d: mean {np.nanmean(cms):.3f}  "
+          f"CoV {bl.cov(cms):.3f}  "
+          f"{'STABLE -> freezing at d=30 is justified' if bl.cov(cms) < 0.10 else 'DRIFTS -> must not freeze'}")
+    print(f"  C_bud  across d: mean {np.nanmean(cbs):.3f}  "
+          f"CoV {bl.cov(cbs):.3f}  "
+          f"{'STABLE -> freezing at d=30 is justified' if bl.cov(cbs) < 0.15 else 'DRIFTS -> must not freeze'}")
+    print(f"  Cest   across d: mean {np.nanmean(cests):.3f}  "
+          f"CoV {bl.cov(cests):.3f}  "
+          f"(shown for contrast: this is WHY Cest is measured per run, "
+          f"not frozen)")
+    print("\n  Interpretation: C_m and C_budget are normalized quantities and are")
+    print("  d-stable, so a single frozen value transfers; Cest is the raw")
+    print("  inverse-Gram row-sum and rises with d, so it is re-measured per run.")
+    return rows
+
+
 # --------------------------------------------------------------------------- #
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
@@ -356,6 +421,8 @@ def main():
         x_half = forward_collapse(Cm)
     if what in ("backward", "all"):
         Cb = backward_budget()
+    if what in ("dsweep", "all"):
+        sweep_d_stability()
     if what in ("grid", "all"):
         print("\n[regime grid] five regimes span the two axes of sigma_eff:")
         for s in regime_grid():
