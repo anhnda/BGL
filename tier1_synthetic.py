@@ -324,10 +324,10 @@ def print_calibration(Cm, x_half, Cb):
     print("\n" + "=" * 72)
     print("TIER 1 CALIBRATION (frozen and carried into Tiers 2-3)")
     print("=" * 72)
-    print(f"  {'constant':>10} {'value':>8}   role")
-    print(f"  {'C_M':>10} {Cm:>8.3f}   leakage (Lemma 1), enters sigma_eff")
-    print(f"  {'C_FLOOR':>10} {CONST_FLOOR:>8.3f}   floor bound (forward); "
-          f"theory=1, empirical>=1 expected")
+    print(f"  {'constant':>10} {'value':>8}   role (values are MEAN OVER d, not d=30)")
+    print(f"  {'C_M':>10} {Cm:>8.3f}   planning/pilot only (NOT in certified floor)")
+    print(f"  {'C_FLOOR':>10} {CONST_FLOOR:>8.3f}   orthonormal ideal only; floor "
+          f"uses per-run C_est")
     print(f"  {'C_BUDGET':>10} {Cb:>8.3f}   budget rule (backward), Eq. 8")
     print(f"\n  forward collapse point x_0.5 = {x_half:.2f} "
           f"(a point on the shared SDR curve)")
@@ -410,7 +410,9 @@ def sweep_d_stability(d_grid=(15, 24, 30, 49), n_active=4):
     print("  inconsistent to claim d-stability and then cherry-pick one d. The")
     print("  low cross-d CoV is what licenses a single frozen scalar for C_m,")
     print("  C_budget; the high CoV for C_est is why it is re-measured per run.")
-    return rows
+    # Return the FROZEN means (over d), not any single d's value, so the caller's
+    # summary reports 0.830 / 1.552 rather than the d=30-only 0.833 / 1.535.
+    return rows, cm_mu, cb_mu
 
 
 # --------------------------------------------------------------------------- #
@@ -424,14 +426,21 @@ def main():
     Cm = bl.CONSTANTS.C_M
     x_half = float("nan")
     Cb = bl.CONSTANTS.C_BUDGET
+    # calibrate_leakage()/backward_budget() at their DEFAULT d=30 give the
+    # single-d values (0.833 / 1.535); the frozen constants are the MEAN OVER d
+    # from sweep_d_stability (0.830 / 1.552). We keep the single-d numbers only
+    # for the intermediate collapse plots and OVERWRITE Cm/Cb with the d-means
+    # before the final summary, so the summary never reports a cherry-picked d.
     if what in ("leakage", "all"):
-        Cm = calibrate_leakage()
+        Cm = calibrate_leakage()          # d=30 value, used only for the grid/collapse
     if what in ("forward", "all"):
         x_half = forward_collapse(Cm)
     if what in ("backward", "all"):
-        Cb = backward_budget()
+        Cb = backward_budget()            # d=30 value
     if what in ("dsweep", "all"):
-        sweep_d_stability()
+        _, Cm_mean, Cb_mean = sweep_d_stability()
+        if what == "all":
+            Cm, Cb = Cm_mean, Cb_mean     # FROZEN = mean over d
     if what in ("grid", "all"):
         print("\n[regime grid] five regimes span the two axes of sigma_eff:")
         for s in regime_grid():
