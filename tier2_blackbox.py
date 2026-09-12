@@ -179,18 +179,31 @@ def image_probe(clf, img, reference, grid):
 # =========================================================================== #
 #  Shared per-probe routines (all numerics via bl_core)
 # =========================================================================== #
-def pilot_sigma_eff(probe: Probe, K, seed=0, detail=False):
+def pilot_sigma_eff(probe: Probe, K, seed=0, detail=False, ucb=False,
+                    delta_pilot=None):
     """Cross-fitted pilot -> sigma_eff (the only data-dependent input).
 
     R1.6: internally uses the full mismatch breakdown so the negative-clip flag
     and the Bernstein sup-norm B_hat are available. Default return is unchanged
     (s_eff, m_hat) for back-compat; pass detail=True to also get the
     MismatchEstimate for negative-fraction logging and the R1.5 domination check.
+
+    R2.1: pass ucb=True to return the empirical-Bernstein UPPER-CONFIDENCE
+    sigma_eff (bl.sigma_eff_ucb) instead of the plain point estimate, so the
+    guarantee becomes unconditional (the pilot event is then budgeted by
+    split=4 in the floor -- the driver passes that through). detail=True with
+    ucb=True returns the full SigmaEffUCB object.
     """
     N0 = bl.pilot_N0(probe.d, K)
     rng = np.random.default_rng(seed + 12345)
     Z = bl.sample_masks(max(N0, 3 * bl.p_K(probe.d, K)), probe.d, rng)
     y = probe.query(Z)
+    if ucb:
+        u = bl.sigma_eff_ucb(Z, y, K, probe.sigma_obs, d=probe.d,
+                             delta_pilot=delta_pilot, cross_fit=(K == 2))
+        if detail:
+            return u.s_eff_ucb, u
+        return u.s_eff_ucb, u.m_ucb
     est = bl.estimate_mismatch_detail(Z, y, K, probe.sigma_obs,
                                       cross_fit=(K == 2))
     s_eff = bl.sigma_eff(probe.sigma_obs, est.m_hat)

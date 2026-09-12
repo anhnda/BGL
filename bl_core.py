@@ -562,6 +562,95 @@ def pilot_N0(d: int, K: int = 1) -> int:
 
 
 # =========================================================================== #
+#  R2.1 -- CONSERVATIVE UPPER-CONFIDENCE (UCB) PILOT FOR sigma_eff
+#
+#  The guarantee of Theorem 1 is CONDITIONAL on sigma_eff upper-bounding the true
+#  effective scale. Appendix C's plain pilot is upper-biased in the normal regime
+#  but can be ANTI-conservative in a near-degenerate cell (ViSoBERT/zero), where
+#  the reseeding audit (Tier 2b, R1.7) shows the per-run failure rate rising ABOVE
+#  1/pK. Reviewer 2 asks for a pilot that upper-bounds sigma_eff WITH HIGH
+#  PROBABILITY so the guarantee becomes UNCONDITIONAL.
+#
+#  Construction. The mismatch-energy estimate is a mean of bounded terms:
+#      m_hat = (1/n) sum_t r_t^2  -  sigma_obs^2 ,     r_t in [-B, B],  r_t^2 in [0, B^2].
+#  An empirical-Bernstein one-sided bound (Maurer & Pontil 2009) gives, with
+#  probability >= 1 - delta_pilot,
+#      m  <=  m_hat_raw + sqrt( 2 V_hat log(1/delta_p) / n )
+#                       + (7/3) B^2 log(1/delta_p) / n  =:  m_ucb ,
+#  where V_hat is the sample variance of the r_t^2 terms and m_hat_raw is BEFORE
+#  clipping (using the raw value keeps the bound valid when m_hat clipped to 0).
+#  We then feed the clipped m_ucb through sigma_eff:
+#      sigma_eff_ucb = sigma_obs + C_m sqrt( max(m_ucb, 0) ),
+#  a high-probability UPPER bound on the true sigma_eff. Its failure probability
+#  delta_pilot is the FOURTH event of the union bound, so it is budgeted by
+#  DELTA_SPLIT = 4 (the Constants docstring already reserved this) rather than
+#  left as a conditioning hypothesis.
+#
+#  At K=1 this removes the "conditional on sigma_eff" caveat outright; at K=2 the
+#  same bound applies to the cross-fitted residual, with the usual pK/N pilot
+#  inflation removed by cross-fitting.
+# =========================================================================== #
+@dataclass
+class SigmaEffUCB:
+    """R2.1 upper-confidence effective scale and its provenance.
+
+    m_hat_raw   : raw (possibly negative) mismatch-energy point estimate.
+    m_ucb       : one-sided empirical-Bernstein upper bound on the mismatch energy
+                  at level delta_pilot (clipped at 0).
+    s_eff_hat   : plug-in sigma_eff from the point estimate (the old pilot).
+    s_eff_ucb   : sigma_obs + C_m sqrt(m_ucb) -- the high-probability upper bound.
+    bernstein_var, bernstein_range : the two margin terms (for logging).
+    delta_pilot : the level at which the bound holds.
+    """
+    m_hat_raw: float
+    m_ucb: float
+    s_eff_hat: float
+    s_eff_ucb: float
+    bernstein_var: float
+    bernstein_range: float
+    delta_pilot: float
+
+
+def sigma_eff_ucb(Z: np.ndarray, y: np.ndarray, K: int, sigma_obs: float,
+                  d: int = None, delta_pilot: float = None,
+                  cross_fit: bool = True, C_m: float = None) -> SigmaEffUCB:
+    """R2.1 -- empirical-Bernstein one-sided UPPER bound on sigma_eff.
+
+    Returns a SigmaEffUCB. `s_eff_ucb` upper-bounds the true sigma_eff with
+    probability >= 1 - delta_pilot, so plugging it into the floor makes Theorem 1
+    UNCONDITIONAL up to the union-bounded delta (which now budgets this pilot
+    event via DELTA_SPLIT = 4).
+
+    delta_pilot defaults to 1/pK, matching the per-event level of the other three
+    failure events under the split union bound.
+    """
+    C_m = CONSTANTS.C_M if C_m is None else C_m
+    d = Z.shape[1] if d is None else d
+    pk = p_K(d, K)
+    delta_pilot = (1.0 / pk) if delta_pilot is None else delta_pilot
+
+    resid = _held_out_residual(Z, y, K, cross_fit)
+    n = resid.size
+    sq = resid ** 2                                   # r_t^2 in [0, B^2]
+    mse = float(sq.mean())
+    m_hat_raw = mse - sigma_obs ** 2
+    B2 = float(sq.max()) if n else 0.0                # B^2 = max r_t^2
+    V_hat = float(sq.var(ddof=1)) if n > 1 else 0.0   # sample var of r_t^2
+    L = math.log(1.0 / delta_pilot)
+    # empirical-Bernstein one-sided margin (Maurer-Pontil): the (7/3) range term
+    var_term = math.sqrt(2.0 * V_hat * L / n) if n > 0 else float("inf")
+    range_term = (7.0 / 3.0) * B2 * L / n if n > 0 else float("inf")
+    m_ucb = max(m_hat_raw + var_term + range_term, 0.0)
+
+    s_eff_hat = sigma_obs + C_m * math.sqrt(max(m_hat_raw, 0.0))
+    s_eff_ucb = sigma_obs + C_m * math.sqrt(m_ucb)
+    return SigmaEffUCB(m_hat_raw=m_hat_raw, m_ucb=m_ucb,
+                       s_eff_hat=s_eff_hat, s_eff_ucb=s_eff_ucb,
+                       bernstein_var=var_term, bernstein_range=range_term,
+                       delta_pilot=delta_pilot)
+
+
+# =========================================================================== #
 #  FORWARD evidence containers + collapse-curve machinery (Tier 1 / exact-beta)
 # =========================================================================== #
 @dataclass
@@ -824,7 +913,7 @@ def _mean_pairwise_jaccard(sets):
 
 
 def reseed_audit(query_fn, d, sigma_obs, N, R, K, s_eff,
-                 seed0=0, family_wise=True, p_keep=None):
+                 seed0=0, family_wise=True, p_keep=None, split=None):
     """Run the independent-reseeding audit on one probe.
 
     query_fn(Z): (N,d) binary masks -> (N,) model outputs -- the ONLY model
@@ -833,6 +922,9 @@ def reseed_audit(query_fn, d, sigma_obs, N, R, K, s_eff,
     s_eff      : the pilot effective scale for this probe (held fixed across
                  seeds, exactly as deployed: the pilot is run once, then the
                  certificate is applied to each independent draw).
+    split      : R2.1 -- pass split=4 when s_eff is the UCB upper bound, so the
+                 floor budgets the pilot event as the fourth union-bound term.
+                 Defaults to CONSTANTS.DELTA_SPLIT (=3, the conditional pilot).
 
     Returns a ReseedResult. Per seed r we draw an INDEPENDENT bank Z^(r) (seeded
     seed0 + r), fit dense OLS, measure the realized floor from that design
@@ -863,7 +955,7 @@ def reseed_audit(query_fn, d, sigma_obs, N, R, K, s_eff,
             beta, _, _ = ols_fit(Z, y, K)
         except np.linalg.LinAlgError:
             continue
-        fl = floor_from_design(Z, s_eff, K, family_wise)
+        fl = floor_from_design(Z, s_eff, K, family_wise, split=split)
         cset, _ = certified_set(beta, fl)
         betas.append(beta)
         floors.append(fl)

@@ -70,16 +70,22 @@ from tier2_blackbox import (
 # =========================================================================== #
 #  Per-probe audit
 # =========================================================================== #
-def audit_probe(probe: Probe, N, R, K, seed0=0):
+def audit_probe(probe: Probe, N, R, K, seed0=0, ucb=False):
     """Pilot sigma_eff ONCE (as deployed), then run the independent-reseeding
     audit at fixed N over R seeds. Returns a bl.ReseedResult or None if the
-    probe is not identifiable at this (N, K)."""
+    probe is not identifiable at this (N, K).
+
+    R2.1: ucb=True uses the empirical-Bernstein UPPER-CONFIDENCE sigma_eff
+    (unconditional guarantee), and the floor then budgets the pilot event as the
+    fourth union-bound term (split=4). ucb=False is the plain conditional pilot
+    (split=3, the default)."""
     if N <= bl.p_K(probe.d, K):
         return None
-    s_eff, _ = pilot_sigma_eff(probe, K, seed=seed0)
+    s_eff, _ = pilot_sigma_eff(probe, K, seed=seed0, ucb=ucb)
+    split = 4 if ucb else None
     res = bl.reseed_audit(
         query_fn=probe.query, d=probe.d, sigma_obs=probe.sigma_obs,
-        N=N, R=R, K=K, s_eff=s_eff, seed0=seed0 + 1000)
+        N=N, R=R, K=K, s_eff=s_eff, seed0=seed0 + 1000, split=split)
     return res if (res is not None and res.well_posed) else None
 
 
@@ -120,10 +126,14 @@ def _pool_cell(cell, results):
 # =========================================================================== #
 #  Reporting
 # =========================================================================== #
-def report_reseed(rows, N, R, K):
+def report_reseed(rows, N, R, K, pilot="plain"):
     print("\n" + "=" * 72)
+    _plabel = ("UCB upper-confidence sigma_eff -- UNCONDITIONAL (R2.1, split=4)"
+               if pilot == "ucb"
+               else "plain point-estimate sigma_eff -- conditional (split=3)")
     print(f"TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N={N}, R={R} seeds, "
           f"K={K})")
+    print(f"           pilot: {_plabel}")
     print("=" * 72)
     if not rows:
         print("  no well-posed probes (every probe had N <= pK at this budget).")
@@ -208,7 +218,7 @@ def run_nlp(args):
                 if p is None:
                     prog.step(f"{bk}/{ref} (skipped: d out of range)")
                     continue
-                res = audit_probe(p, args.N, args.R, args.K, seed0=si)
+                res = audit_probe(p, args.N, args.R, args.K, seed0=si, ucb=args.pilot=="ucb")
                 if res is not None:
                     cell_results.append(res)
                     prog.step(f"{bk}/{ref} d={p.d} "
@@ -220,7 +230,7 @@ def run_nlp(args):
                 rows.append(_pool_cell(f"{bk}/{ref}", cell_results))
         clf.close()
     prog.close()
-    report_reseed(rows, args.N, args.R, args.K)
+    report_reseed(rows, args.N, args.R, args.K, args.pilot)
 
 
 def run_image(args):
@@ -248,7 +258,7 @@ def run_image(args):
                 if p is None:
                     prog.step(f"{bk}/{ref} (skipped)")
                     continue
-                res = audit_probe(p, args.N, args.R, 1, seed0=pi)
+                res = audit_probe(p, args.N, args.R, 1, seed0=pi, ucb=args.pilot=="ucb")
                 if res is not None:
                     cell_results.append(res)
                     prog.step(f"{bk}/{ref} d={p.d} "
@@ -260,7 +270,7 @@ def run_image(args):
                 rows.append(_pool_cell(f"{bk}/{ref}", cell_results))
         clf.close()
     prog.close()
-    report_reseed(rows, args.N, args.R, 1)
+    report_reseed(rows, args.N, args.R, 1, args.pilot)
 
 
 # =========================================================================== #
@@ -323,12 +333,12 @@ def run_selftest(args):
         results = []
         for si in range(args.subset or 8):
             probe, _ = _make_synthetic_probe(seed=si, **cfg)
-            res = audit_probe(probe, args.N, args.R, 1, seed0=si)
+            res = audit_probe(probe, args.N, args.R, 1, seed0=si, ucb=args.pilot=="ucb")
             if res is not None:
                 results.append(res)
         if results:
             rows.append(_pool_cell(name, results))
-    report_reseed(rows, args.N, args.R, 1)
+    report_reseed(rows, args.N, args.R, 1, args.pilot)
 
 
 # =========================================================================== #
@@ -349,6 +359,10 @@ def build_parser():
     p.add_argument("--glob", default="*.JPEG")
     p.add_argument("--grid", type=int, default=7)
     p.add_argument("--subset", type=int, default=10)
+    p.add_argument("--pilot", choices=["plain", "ucb"], default="plain",
+                   help="plain = conditional point-estimate pilot (split=3); "
+                        "ucb = R2.1 empirical-Bernstein upper-confidence "
+                        "sigma_eff, unconditional guarantee (split=4).")
     return p
 
 
