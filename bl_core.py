@@ -609,6 +609,64 @@ def false_sign_rate(beta_run: np.ndarray, beta_exact: np.ndarray, fl: float,
     return int(false.sum()), int(scored.sum())
 
 
+@dataclass
+class PowerMiss:
+    """R1.9 -- enumeration POWER against the exact projection.
+
+    A certificate that resolves almost nothing is trivially free of false signs,
+    so zero-false-sign is only meaningful alongside how much the run actually
+    RECOVERS of what is truly resolvable. Ground truth is the exact-cube beta.
+
+    Two ground-truth strata (both defined by the EXACT fit, so they are the
+    honest denominators the referee asked for):
+      resolvable       : |beta_exact| > fl_exact
+                         (coords the exact projection itself certifies at this
+                          reference/budget floor -- the natural "true positives"
+                          the run is trying to recover).
+      detectable       : |beta_exact| > 2 * fl_exact
+                         (the Theorem-1 margin: every such coord MUST clear the
+                          run floor under the guarantee, so a miss here is a
+                          genuine power failure, not a borderline near-floor case).
+
+    For each stratum:
+      n_truth          : size of the stratum
+      n_recovered      : how many the RUN also certifies (|beta_run| > fl_run)
+      n_miss           : n_truth - n_recovered   (the false negatives)
+      power            : n_recovered / n_truth
+    """
+    n_resolvable: int
+    n_resolvable_recovered: int
+    n_resolvable_miss: int
+    n_detectable: int
+    n_detectable_recovered: int
+    n_detectable_miss: int
+
+
+def power_miss_stats(beta_run: np.ndarray, beta_exact: np.ndarray,
+                     fl_run: float, fl_exact: float) -> PowerMiss:
+    """R1.9 -- count how many truly-resolvable / truly-detectable coords (by the
+    EXACT projection) the run FAILED to certify (misses / false negatives).
+
+    detectable (|beta_exact| > 2 fl_exact) is the stratum Theorem 1's factor-two
+    margin promises the run must catch; a miss there is the meaningful power
+    failure. resolvable (> fl_exact) is the looser stratum (borderline coords the
+    exact fit just barely certifies). Reporting both makes the enumeration result
+    a POWER statement, not only a zero-false-sign statement.
+    """
+    run_cert = np.abs(beta_run) > fl_run
+    resolvable = np.abs(beta_exact) > fl_exact
+    detectable = np.abs(beta_exact) > 2.0 * fl_exact
+    res_rec = int((resolvable & run_cert).sum())
+    det_rec = int((detectable & run_cert).sum())
+    n_res = int(resolvable.sum())
+    n_det = int(detectable.sum())
+    return PowerMiss(
+        n_resolvable=n_res, n_resolvable_recovered=res_rec,
+        n_resolvable_miss=n_res - res_rec,
+        n_detectable=n_det, n_detectable_recovered=det_rec,
+        n_detectable_miss=n_det - det_rec)
+
+
 # =========================================================================== #
 #  WORKFLOW DIAGNOSTICS (kept SEPARATE from the guarantee, by design)
 # =========================================================================== #

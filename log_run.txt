@@ -336,3 +336,36 @@ TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
 
 
 
+ python baselines.py nlp --backbones distilbert --references mask \                                                                                                                  
+    --N 2000 --B 200 --subset 10 --sentences text_samples/sst2_samples.txt                                                                                                                                         
+python baselines.py image --backbones resnet50 --references mean \                                                                                                                                                 
+    --N 2000 --B 200 --subset 10 --images_dir image_samples --glob "*.JPEG"                                                                                                                                        
+baselines-nlp K=1: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:07<00:00,  1.31item/s, distilbert/mask d=9 agree=89%]
+                                                                                                                                                                                                                   
+========================================================================                                                                                                                                           
+FLOOR vs BOOTSTRAP vs WALD  (NLP K=1, shared bank N=2000, B=200)                                                                                                                                                   
+========================================================================                                                                                                                                           
+  coords (total over items)     : 220                                                                                                                                                                              
+  mean sigma_obs over items     : 0.0000  (sigma_obs~0 -> floor is mismatch-driven (sigma_eff = C_m sqrt(m)))                                                                                                      
+  floor vs bootstrap agreement  : 70.5%                                                                                                                                                                            
+  floor certified  (mean/item)  : 6.6                                                                                                                                                                              
+  bootstrap cert.  (mean/item)  : 13.1                                                                                                                                                                             
+  FLOOR-ONLY (floor yes, boot no, mean/item) : 0.00                                                                                                                                                                
+    -> 0.00 => floor never certifies a coord the bootstrap rejects                                                                                                                                                 
+  BOOT-ONLY  (boot yes, floor no, mean/item) : 6.50                                                                                                                                                                
+    -> all disagreement is bootstrap-only certification of near-floor coords;                                                                                                                                      
+       the floor is the more conservative simultaneous rule.                                                                                                                                                       
+                                                                                                                                                                                                                   
+  --- Wald comparison (R1.10) ---                                                                                                                                                                                  
+  [naive Wald, sigma_obs SE only -- the straw man]                                                                                                                                                                 
+    certified-ALL items (sigma_obs~0 degeneracy): 10/10                                                                                                                                                            
+    -> on the deterministic backbone the naive Wald certifies every coordinate                                                                                                                                     
+       regardless of evidence; its SE sees no mismatch. This is the degeneracy                                                                                                                                     
+       the mismatch term of sigma_eff repairs -- but it is not a fair competitor.                                                                                                                                  
+  [fair Wald, SE from FITTED RESIDUALS -- absorbs mismatch (R1.10)]                                                                                                                                                
+    fair-Wald certified (mean/item)            : 12.2                                                                                                                                                              
+    fair-Wald certified-ALL items              : 0/10                                                                                                                                                              
+    floor vs fair-Wald agreement               : 74.5%                                                                                                                                                             
+    FAIR-WALD-ONLY (fair-Wald yes, floor no, mean/item): 5.60
+    FLOOR-ONLY vs fair-Wald (floor yes, fW no, mean/item): 0.00
+    -> the fair Wald does NOT degenerate as sigma_obs->0 (its SE sees the
