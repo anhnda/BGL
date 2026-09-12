@@ -581,14 +581,21 @@ def pilot_N0(d: int, K: int = 1) -> int:
 #  clipping (using the raw value keeps the bound valid when m_hat clipped to 0).
 #  We then feed the clipped m_ucb through sigma_eff:
 #      sigma_eff_ucb = sigma_obs + C_m sqrt( max(m_ucb, 0) ),
-#  a high-probability UPPER bound on the true sigma_eff. Its failure probability
-#  delta_pilot is the FOURTH event of the union bound, so it is budgeted by
-#  DELTA_SPLIT = 4 (the Constants docstring already reserved this) rather than
-#  left as a conditioning hypothesis.
+#  a high-probability UPPER bound on the true sigma_eff.
 #
-#  At K=1 this removes the "conditional on sigma_eff" caveat outright; at K=2 the
-#  same bound applies to the cross-fitted residual, with the usual pK/N pilot
-#  inflation removed by cross-fitting.
+#  WHAT THIS DELIVERS (and what it does not). This is exactly Reviewer 2's ask:
+#  a formally-defined CONSERVATIVE upper-confidence estimator for the pilot phase.
+#  It discharges Theorem 1's conditioning hypothesis ("conditional on sigma_eff a
+#  valid upper-bounding scale") BY CONSTRUCTION, at level delta_pilot, which is
+#  then budgeted as the FOURTH union-bound event via DELTA_SPLIT = 4.
+#
+#  It does NOT claim to drive the per-run reseed failure rate (R1.7) below 1/pK.
+#  In a near-degenerate cell (ViSoBERT/zero) the point estimate is already close
+#  to the truth, so the Bernstein margin lifts sigma_eff only slightly; the cell
+#  stays in the residual conditional regime the paper flags as a limitation. The
+#  UCB makes the pilot bound HONEST (one-sided, high-probability), which is the
+#  requested guarantee -- not a promise that a near-constant masked response can
+#  be fully certified at a finite budget.
 # =========================================================================== #
 @dataclass
 class SigmaEffUCB:

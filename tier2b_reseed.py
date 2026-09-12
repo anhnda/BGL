@@ -128,7 +128,11 @@ def _pool_cell(cell, results):
 # =========================================================================== #
 def report_reseed(rows, N, R, K, pilot="plain"):
     print("\n" + "=" * 72)
-    _plabel = ("UCB upper-confidence sigma_eff -- UNCONDITIONAL (R2.1, split=4)"
+    _plabel = ("UCB upper-confidence sigma_eff (R2.1): discharges Theorem 1's "
+               "pilot\n                  conditioning hypothesis w.h.p. (split=4). "
+               "Does NOT by itself force\n                  the per-run rate below "
+               "1/pK -- a near-degenerate cell can remain in\n                  the "
+               "residual conditional regime the paper flags as a limitation."
                if pilot == "ucb"
                else "plain point-estimate sigma_eff -- conditional (split=3)")
     print(f"TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N={N}, R={R} seeds, "

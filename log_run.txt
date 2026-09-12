@@ -402,3 +402,115 @@ EXACT-BETA sign-correctness (NLP K=2)
        run floor; detectable-power < 1 would flag a guarantee gap, power = 1 with
        zero false signs is the strong reading. Resolvable-power is the looser
        near-floor stratum and is expected to be lower (borderline coords).
+
+
+
+
+
+
+
+# BEFORE — plain pilot, đã chạy: per-run 34/160 = 0.2125 (VƯỢT 1/pK=0.0588)                                                                                                         
+python tier2b_reseed.py nlp --backbones visobert --references zero \                                                                                                                                               
+    --N 2000 --R 40 --K 1 --subset 10 --sentences text_samples/sst2_samples.txt --pilot plain                                                                                                                      
+                                                                                                                                                                                                                   
+# AFTER — UCB pilot: kỳ vọng per-run rate tụt xuống <= 1/pK                                                                                                                                                        
+python tier2b_reseed.py nlp --backbones visobert --references zero \                                                                                                                                               
+    --N 2000 --R 40 --K 1 --subset 10 --sentences text_samples/sst2_samples.txt --pilot ucb                                                                                                                        
+                                                                                                                                                                                                                   
+# Sanity cell mạnh (phải vẫn 0 cả hai)                                                                                                                                                                             
+python tier2b_reseed.py image --backbones resnet50 --references mean \                                                                                                                                             
+    --N 2000 --R 40 --subset 10 --images_dir image_samples --glob "*.JPEG" --pilot ucb                                                                                                                             
+tier2b-nlp N=2000 R=40: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [01:33<00:00,  9.35s/item, visobert/zero (skipped: d out of range)]
+                                                                                                                                                                                                                   
+========================================================================                                                                                                                                           
+TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)                                                                                                                                            
+           pilot: plain point-estimate sigma_eff -- conditional (split=3)
+========================================================================
+                  cell   pK |    viol/cert    rate    1/pK |  run_fail/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         visobert/zero   17 |     116/2061  0.0563  0.0588 |         34/160  0.2125 |  0.958     0.722   7.3/5.2  
+
+  (A) PER-COORDINATE cross-seed sign-disagreement (stability, not correctness):
+      116/2061 = 0.0563   target <= 1/pK (~0.0588)   [OK]
+  (R1.7) PER-RUN simultaneous failure (ANY certified coord disagrees) -- the faithful test of Theorem 1's 1-delta clause:
+      34/160 = 0.2125   target <= delta = 1/pK (~0.0588)   [ABOVE TARGET]
+  (B) set churn is confined to the unresolved band (Definition 1):
+      mean Jaccard above 2*floor = 0.958  (near 1 = stable); in band [floor,2floor] = 0.722  (lower = churn, as predicted)
+
+  NOTE: cross-seed agreement is STABILITY, not correctness -- two seeds
+        can agree and both be wrong. Only the enumeration tier (exact
+        beta) tests correctness.
+
+  % ---- booktabs table for the appendix ----
+  \begin{tabular}{lrrrrrr}
+  \toprule
+  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  \midrule
+  visobert/zero & 17 & 0.0563 & 0.2125 & 0.0588 & 0.958 & 0.722 \\
+  \bottomrule
+  \end{tabular}
+
+  % ---- booktabs table for the appendix ----
+  \begin{tabular}{lrrrrrr}
+  \toprule
+  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  \midrule
+  visobert/zero & 17 & 0.0563 & 0.2125 & 0.0588 & 0.958 & 0.722 \\
+  \bottomrule
+  \end{tabular}
+tier2b-nlp N=2000 R=40:  50%|██████████████████████████████████████████████████████                                                      | 5/10 [00:38<01:08, 13.73s/item, visobert/zero (skipped: d out of range)]
+tier2b-nlp N=2000 R=40: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [01:33<00:00,  9.35s/item, visobert/zero (skipped: d out of range)]
+
+========================================================================
+TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
+           pilot: UCB upper-confidence sigma_eff -- UNCONDITIONAL (R2.1, split=4)
+========================================================================
+                  cell   pK |    viol/cert    rate    1/pK |  run_fail/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         visobert/zero   17 |      86/1798  0.0478  0.0588 |         21/160  0.1313 |  1.000     0.711   4.5/5.0  
+
+  (A) PER-COORDINATE cross-seed sign-disagreement (stability, not correctness):
+      86/1798 = 0.0478   target <= 1/pK (~0.0588)   [OK]
+  (R1.7) PER-RUN simultaneous failure (ANY certified coord disagrees) -- the faithful test of Theorem 1's 1-delta clause:
+      21/160 = 0.1313   target <= delta = 1/pK (~0.0588)   [ABOVE TARGET]
+  (B) set churn is confined to the unresolved band (Definition 1):
+      mean Jaccard above 2*floor = 1.000  (near 1 = stable); in band [floor,2floor] = 0.711  (lower = churn, as predicted)
+
+  NOTE: cross-seed agreement is STABILITY, not correctness -- two seeds
+        can agree and both be wrong. Only the enumeration tier (exact
+        beta) tests correctness.
+
+  % ---- booktabs table for the appendix ----
+  \begin{tabular}{lrrrrrr}
+  \toprule
+  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  \midrule
+  visobert/zero & 17 & 0.0478 & 0.1313 & 0.0588 & 1.000 & 0.711 \\
+  \bottomrule
+  \end{tabular}
+  tier2b-image N=2000 R=40:  20%|████████████████████▍                                                                                 | 2/10 [03:51<15:23, 115.47s/item, resnet50/mean d=49 viol=0/448 runfail=0/40]tier2b-image N=2000 R=40: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [19:14<00:00, 115.47s/item, resnet50/mean d=49 viol=0/124 runfail=0/40]
+
+========================================================================
+TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
+           pilot: UCB upper-confidence sigma_eff -- UNCONDITIONAL (R2.1, split=4)
+========================================================================
+                  cell   pK |    viol/cert    rate    1/pK |  run_fail/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         resnet50/mean   50 |       0/2274  0.0000  0.0200 |          0/400  0.0000 |  1.000     0.847   1.2/4.1  
+
+  (A) PER-COORDINATE cross-seed sign-disagreement (stability, not correctness):
+      0/2274 = 0.0000   target <= 1/pK (~0.0200)   [OK]
+  (R1.7) PER-RUN simultaneous failure (ANY certified coord disagrees) -- the faithful test of Theorem 1's 1-delta clause:
+      0/400 = 0.0000   target <= delta = 1/pK (~0.0200)   [OK]
+  (B) set churn is confined to the unresolved band (Definition 1):
+      mean Jaccard above 2*floor = 1.000  (near 1 = stable); in band [floor,2floor] = 0.847  (lower = churn, as predicted)
+
+  NOTE: cross-seed agreement is STABILITY, not correctness -- two seeds
+        can agree and both be wrong. Only the enumeration tier (exact
+        beta) tests correctness.
+
+  % ---- booktabs table for the appendix ----
+  \begin{tabular}{lrrrrrr}
+  \toprule
+  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  \midrule
+  resnet50/mean & 50 & 0.0000 & 0.0000 & 0.0200 & 1.000 & 0.847 \\
+  \bottomrule
+  \end{tabular}
