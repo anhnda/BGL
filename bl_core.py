@@ -115,9 +115,30 @@ class Constants:
     which needs no transfer claim because nothing is transferred.
     """
     C_FLOOR: float = 1.0       # orthonormal IDEAL / fallback only -- see R1.4 note
-    C_M: float = 0.830         # leakage constant: MEAN over d in {15,24,30,49}
-                               # (0.820,0.794,0.833,0.871); cross-d CoV 0.039.
-                               # NOT the single-d=30 value -- see sweep_d_stability.
+    C_M: float = 0.830         # EMPIRICAL PLANNING / CALIBRATION quantity ONLY --
+                               # NOT a certificate constant.  MEAN over d in
+                               # {15,24,30,49} (0.820,0.794,0.833,0.871); cross-d
+                               # CoV 0.039.
+                               #
+                               # BLOCKING FIX (report point 1/2).  The pre-fix code
+                               # absorbed the Bernstein leakage into a SINGLE floor
+                               # term  C_floor * (sigma_obs + C_m sqrt(m)) *
+                               # sqrt(2 L / N), which only upper-bounds the leading
+                               # Lemma-1 term  sqrt(2 m L / N)  if  C_m >= 1.  An
+                               # empirical average C_m = 0.830 < 1 therefore CANNOT
+                               # serve as the deterministic/high-probability
+                               # upper-bound constant of the theorem: the absorbed
+                               # floor UNDER-covers the leakage by the factor 0.830.
+                               #
+                               # The certified floor now carries the two Bernstein
+                               # terms EXPLICITLY (certified_floor_two_term /
+                               # floor_from_design), so no C_m>=1 is required and no
+                               # absorption is claimed.  C_m survives ONLY as the
+                               # synthetic planning/calibration scalar that enters
+                               # sigma_eff for the BACKWARD budget prediction
+                               # (predict_budget) and for pilot reporting, where an
+                               # empirical average is appropriate.  It never sets a
+                               # certified radius.
     C_BUDGET: float = 1.552    # budget constant: MEAN over the same d grid
                                # (1.604,1.561,1.535,1.510); cross-d CoV 0.026.
     P_KEEP: float = 0.5        # centered +-1 Walsh design the floor assumes
@@ -128,9 +149,22 @@ class Constants:
     # hypothesis (Theorem 1), not a spent event. Set to 4 to also budget the
     # pilot event probabilistically. The floor carries log(DELTA_SPLIT*pK/delta).
     DELTA_SPLIT: int = 3
+    # When the UCB pilot is used it becomes a fourth union-bound event, so the
+    # pilot's own failure probability must be a SHARE delta/4 of the total, and
+    # the floor's log factor uses split = 4.  (Blocking fix, report point 3:
+    # the pre-fix code gave the pilot the whole 1/pK instead of 1/(4 pK).)
+    DELTA_SPLIT_UCB: int = 4
 
 
 CONSTANTS = Constants()
+
+
+# Shared ill-conditioning cutoff (report point 9): ols_fit and realized_cest MUST
+# use the SAME threshold, otherwise a design can pass the fit (cond < COND_MAX)
+# yet be treated differently by the floor.  A design above this cutoff is declared
+# NOT well-posed -> the run is UNRESOLVED / no certificate, never an
+# anti-conservative fallback to C_FLOOR = 1.
+COND_MAX: float = 1e8
 
 
 # =========================================================================== #
@@ -176,18 +210,35 @@ def feature_subsets(d: int, K: int):
     return subs
 
 
-def design_matrix(Z: np.ndarray, K: int) -> np.ndarray:
-    """Centered Walsh design over |S| <= K, no intercept column (centering of y
-    absorbs it). Main effects chi_i = 2(z_i - 1/2) in {-1,+1}; pair columns are
-    products of +-1 columns (hence also +-1). Returns (N, pK-1)."""
+def design_matrix(Z: np.ndarray, K: int, intercept: bool = False) -> np.ndarray:
+    """Centered Walsh design over |S| <= K. Main effects chi_i = 2(z_i - 1/2) in
+    {-1,+1}; pair columns are products of +-1 columns (hence also +-1).
+
+    Blocking fix (report point 5): the paper's pK COUNTS the intercept
+    (S = emptyset), and the theorem's Gram / C_est are over the FULL augmented
+    Walsh design [1, chi_i, chi_i chi_j, ...].  At the population the main/pair
+    columns are mean zero, but at FINITE N they are not exactly mean zero, so
+    fitting y - y_mean on the un-centered Walsh columns is NOT algebraically
+    equivalent to full OLS with an intercept.  Passing intercept=True prepends the
+    all-ones column so the design (and the Gram, C_est, and the fit) is the exact
+    augmented Walsh design the theorem defines.
+
+    intercept=False returns the (N, pK-1) non-intercept block (kept for the few
+    call sites that genuinely want only the effect columns, e.g. plotting the
+    leakage on effect columns).  intercept=True returns the (N, pK) augmented
+    design with the intercept as column 0.
+    """
     Zc = 2.0 * (Z - 0.5)
     N, d = Zc.shape
     if K == 1:
-        return Zc
-    pair_cols = [Zc[:, i] * Zc[:, j] for (i, j) in combinations(range(d), 2)]
-    if pair_cols:
-        return np.concatenate([Zc, np.stack(pair_cols, axis=1)], axis=1)
-    return Zc
+        eff = Zc
+    else:
+        pair_cols = [Zc[:, i] * Zc[:, j] for (i, j) in combinations(range(d), 2)]
+        eff = (np.concatenate([Zc, np.stack(pair_cols, axis=1)], axis=1)
+               if pair_cols else Zc)
+    if intercept:
+        return np.concatenate([np.ones((N, 1)), eff], axis=1)
+    return eff
 
 
 def standardize_columns(X: np.ndarray):
@@ -206,25 +257,37 @@ def sample_masks(N: int, d: int, rng: np.random.Generator,
 #  Dense OLS  (the paper's estimator; closed-form normal equations)
 # =========================================================================== #
 def ols_fit(Z: np.ndarray, y: np.ndarray, K: int):
-    """Column-standardized dense OLS with intercept over the degree-<=K design.
+    """Dense OLS over the FULL augmented degree-<=K Walsh design (report point 5).
 
-    Returns (beta on ORIGINAL scale, intercept, diag(Ginv)). Raises
-    LinAlgError if N <= pK (dense fit not well-posed -- Assumption 1).
+    The design is [1, chi_i, chi_i chi_j, ...] with the intercept as a genuine
+    fitted column (S = emptyset), so this is EXACT full OLS with intercept -- not
+    "regress y - y_mean on un-centered Walsh columns", which only coincides with
+    it at the population where the Walsh columns are mean zero.  Columns are
+    standardized before inversion (the intercept column standardizes to itself,
+    scale 1) and the coefficients mapped back to the original scale.
+
+    Returns (beta on ORIGINAL scale for the NON-intercept coords, intercept,
+    diag(Ginv) for the non-intercept coords).  The non-intercept ordering matches
+    feature_subsets(d, K), so certified_set indexing is unchanged.  Raises
+    LinAlgError if N <= pK or the augmented Gram is ill-conditioned (Assumption 1).
     """
     d = Z.shape[1]
-    X = design_matrix(Z, K)
-    N = X.shape[0]
+    Xa = design_matrix(Z, K, intercept=True)      # (N, pK) augmented
+    N = Xa.shape[0]
     if N <= p_K(d, K):
         raise np.linalg.LinAlgError(
             f"N={N} <= pK={p_K(d, K)}: dense K={K} fit not well-posed")
-    Xs, scale = standardize_columns(X)
-    y_mean = y.mean()
+    Xs, scale = standardize_columns(Xa)           # scale[0] == 1 (intercept)
     G = (Xs.T @ Xs) / N
-    if np.linalg.cond(G) > 1e8:
+    if np.linalg.cond(G) > COND_MAX:
         raise np.linalg.LinAlgError("Gram ill-conditioned (N too small)")
     Ginv = np.linalg.inv(G)
-    beta_std = Ginv @ (Xs.T @ (y - y_mean)) / N
-    return beta_std / scale, y_mean, np.diag(Ginv)
+    beta_std_full = Ginv @ (Xs.T @ y) / N
+    beta_full = beta_std_full / scale             # original scale, incl intercept
+    intercept = float(beta_full[0])
+    beta = beta_full[1:]                          # non-intercept effect coords
+    diag_ginv = np.diag(Ginv)[1:]                 # drop the intercept coordinate
+    return beta, intercept, diag_ginv
 
 
 # =========================================================================== #
@@ -277,12 +340,12 @@ def measure_conditioning(d: int, K: int, N: int, rng: np.random.Generator
     """
     pk = p_K(d, K)
     Z = sample_masks(N, d, rng)
-    X = design_matrix(Z, K)
+    X = design_matrix(Z, K, intercept=True)       # augmented Gram (report pt 5)
     Xs, _ = standardize_columns(X)
     G = (Xs.T @ Xs) / N
     ratio = pk / N
     try:
-        if np.linalg.cond(G) > 1e10:
+        if np.linalg.cond(G) > COND_MAX:
             raise np.linalg.LinAlgError
         Ginv = np.linalg.inv(G)
         gamma = float(np.linalg.eigvalsh(G)[0])       # lambda_min
@@ -309,37 +372,67 @@ def realized_cest(Z: np.ndarray, K: int) -> float:
     honest floor measures Cest per run. Falls back to CONSTANTS.C_FLOOR only if
     the Gram is too ill-conditioned to invert (the fit itself would then fail).
     """
-    X = design_matrix(Z, K)
+    X = design_matrix(Z, K, intercept=True)       # augmented Gram (report pt 5)
     Xs, _ = standardize_columns(X)
     N = Xs.shape[0]
     G = (Xs.T @ Xs) / N
-    try:
-        if np.linalg.cond(G) > 1e10:
-            raise np.linalg.LinAlgError
-        Ginv = np.linalg.inv(G)
-        gamma = float(np.linalg.eigvalsh(G)[0])
-        Cinv = op_inf_norm(Ginv)
-        gpow = gamma ** (-0.5) if gamma > 0 else float("inf")
-        cest = max(gpow, Cinv)
-        return cest if math.isfinite(cest) and cest >= 1.0 else CONSTANTS.C_FLOOR
-    except np.linalg.LinAlgError:
-        return CONSTANTS.C_FLOOR
+    # Report point 9: do NOT fall back to C_FLOOR=1 when the Gram is bad -- that
+    # is exactly when C_est is LARGE, so pinning it to the ideal 1 makes the floor
+    # anti-conservative.  An ill-conditioned design means the run is unresolved,
+    # so we raise (consistent with ols_fit, same COND_MAX); callers treat this as
+    # "no certificate for this run".
+    if np.linalg.cond(G) > COND_MAX:
+        raise np.linalg.LinAlgError(
+            "Gram ill-conditioned: design not well-posed, run unresolved "
+            "(no certificate; C_est not defined)")
+    Ginv = np.linalg.inv(G)
+    gamma = float(np.linalg.eigvalsh(G)[0])
+    Cinv = op_inf_norm(Ginv)
+    gpow = gamma ** (-0.5) if gamma > 0 else float("inf")
+    cest = max(gpow, Cinv)
+    if not math.isfinite(cest):
+        raise np.linalg.LinAlgError(
+            "C_est not finite: design not well-posed, run unresolved")
+    # The realized design constant exceeds the orthonormal ideal 1 in finite
+    # samples; we never clamp it DOWN to 1 (that would shrink the floor).
+    return max(cest, 1.0)
 
 
 def floor_from_design(Z: np.ndarray, s_eff: float, K: int,
                       family_wise: bool = True, delta: float = None,
-                      split: int = None) -> float:
-    """R1.4 (Path A) -- the floor with Cest measured from the realized design Z.
+                      split: int = None, sigma_obs: float = None,
+                      m_hat: float = None, B: float = None) -> float:
+    """R1.4 (Path A) -- the forward floor with Cest measured from the realized
+    design Z, and (blocking fix) the leakage carried as two explicit Bernstein
+    terms rather than absorbed into a sub-1 C_m.
 
-        floor = realized_cest(Z, K) * s_eff * sqrt(2 log(SPLIT*pK/delta) / N)
+    Two call modes:
 
-    This is the honest forward floor: the design constant is read off the same
-    mask bank the coefficients are fit on, so there is no transfer claim to
-    defend. Use this everywhere a certified decision is made on a real design.
+    * TWO-TERM CERTIFIED FLOOR (preferred).  Pass sigma_obs, m_hat and B; the
+      floor is certified_floor(C_est, sigma_obs, m_hat, B, ...):
+
+          C_est * [ sigma_obs sqrt(2L/N) + sqrt(2 m L/N) + (2/3) B L/N ].
+
+      This is the honest certificate: nothing is absorbed into C_m, so no
+      C_m >= 1 assumption is needed.  Every certified decision on a real design
+      should use this mode.
+
+    * LEGACY SINGLE-SCALAR (back-compat / synthetic collapse).  If m_hat is not
+      supplied, fall back to the pre-fix single-term form
+      realized_cest(Z,K) * s_eff * sqrt(2L/N).  Retained only so existing
+      synthetic-tier callers keep working; NOT the certified radius.
+
+    In both modes C_est is read off the same mask bank the coefficients are fit
+    on, so there is no transfer claim to defend.
     """
     d = Z.shape[1]
     N = Z.shape[0]
     c = realized_cest(Z, K)
+    if m_hat is not None:
+        so = 0.0 if sigma_obs is None else sigma_obs
+        Bv = 0.0 if B is None else B
+        return certified_floor(c, so, m_hat, Bv, d, N, K,
+                               delta=delta, split=split)
     return floor_value(s_eff, d, N, K, family_wise=family_wise,
                        C_floor=c, delta=delta, split=split)
 
@@ -404,12 +497,52 @@ def floor_value(s_eff: float, d: int, N: int, K: int = 1,
     R1.2: the log factor is now the union-bounded log_pk_over_delta(), so the
     floor honestly reflects that the proof spends delta over several events. With
     delta = 1/pK and split = 1 this reduces to the pre-revision sqrt(2 log pK/N).
+
+    DEPRECATED FOR CERTIFICATION.  This single-term form folds the whole leakage
+    into  C_floor * C_m sqrt(m) * sqrt(2 L / N)  via sigma_eff, which is only an
+    upper bound on the leading Lemma-1 term when C_m >= 1 (see the C_M note).  For
+    a certified decision use certified_floor()/floor_from_design(), which carry
+    the two Bernstein terms explicitly.  This function is retained for the
+    BACKWARD budget rule and for the synthetic collapse curves, where sigma_eff
+    with the calibrated C_m is the intended planning quantity, and for the
+    split=1 audit reproduction of the pre-revision numbers.
     """
     C_floor = CONSTANTS.C_FLOOR if C_floor is None else C_floor
     if family_wise:
         L = log_pk_over_delta(d, K, delta, split)
         return C_floor * s_eff * math.sqrt(2.0 * L / N)
     return C_floor * s_eff * CONSTANTS.Z_ALPHA / math.sqrt(N)
+
+
+def certified_floor(C_est: float, sigma_obs: float, m_hat: float, B: float,
+                    d: int, N: int, K: int = 1, delta: float = None,
+                    split: int = None) -> float:
+    """The HONEST two-term certified floor (blocking fix, report point 1/2).
+
+    The certified radius is the sum of the query-noise radius and the FULL
+    Bernstein leakage radius, with the design constant C_est applied to both and
+    NOTHING absorbed into a sub-1 leakage constant:
+
+        floor = C_est * [ sigma_obs * sqrt(2 L / N)                (query noise)
+                          + sqrt(2 m L / N)                        (leakage, sub-Gaussian)
+                          + (2/3) B L / N ]                        (leakage, sub-exponential)
+
+    with L = log(SPLIT * pK / delta), m = m>K,rho the mismatch energy, and
+    B = ||r>K,rho||_inf the mismatch sup-norm.  This matches Lemma 1 term-for-term
+    (sqrt(2mL/N) + (2/3)BL/N) instead of replacing the leakage by
+    C_m sqrt(m) sqrt(2L/N) with C_m = 0.830 < 1, which under-covered the leading
+    term.  C_m no longer appears in any certified quantity.
+
+    When B <= 0 (deterministic / no residual sup available) the sub-exponential
+    term vanishes and the floor reduces to the two population-orthogonal radii.
+    """
+    C_est = CONSTANTS.C_FLOOR if C_est is None else C_est
+    L = log_pk_over_delta(d, K, delta, split)
+    m = max(m_hat, 0.0)
+    noise_radius = max(sigma_obs, 0.0) * math.sqrt(2.0 * L / N)
+    leak_subg = math.sqrt(2.0 * m * L / N)
+    leak_sube = (2.0 / 3.0) * max(B, 0.0) * L / N
+    return C_est * (noise_radius + leak_subg + leak_sube)
 
 
 def certified_set(beta: np.ndarray, fl: float):
@@ -459,23 +592,29 @@ class BudgetPlan:
 
 
 def plan_budget(s_eff: float, beta_min: float, d: int, K: int = 1,
-                family_wise: bool = True, rng: np.random.Generator = None
-                ) -> BudgetPlan:
-    """Full backward plan: predict N, clamp to feasibility, report realized
-    floor and the conservative ratio.
+                family_wise: bool = True, rng: np.random.Generator = None,
+                sigma_obs: float = None, m_hat: float = None,
+                B: float = None) -> BudgetPlan:
+    """Full backward plan: predict N with the empirical C_budget planning
+    constant, clamp to feasibility, and report the realized floor and its ratio.
 
-    R1.4 (Path A): the realized floor at N_run now measures Cest from a sampled
-    design of that size (floor_from_design) rather than assuming C_FLOOR=1, so
-    the reported realized_floor/beta_min ratio reflects the true design constant.
-    A fresh rng is drawn if none is supplied; the design is model-free so this
-    adds no query cost.
+    R1.4 (Path A): the realized floor at N_run measures Cest from a sampled design
+    of that size.  Blocking fix: when the mismatch breakdown (sigma_obs, m_hat, B)
+    is supplied, the realized floor is the honest TWO-TERM certified floor, so the
+    reported realized_floor/beta_min is the real post-design radius rather than the
+    absorbed single-term one.  The PREDICTION step still uses the empirical
+    planning quantity s_eff (with the calibrated C_m and C_budget), which is the
+    intended backward-direction heuristic; the certificate itself is re-measured
+    from the design.  A fresh rng is drawn if none is supplied; the design is
+    model-free so this adds no query cost.
     """
     N_pred = predict_budget(s_eff, beta_min, d, K, family_wise)
     feas = feasibility_floor(d, K)
     N_run = max(N_pred, feas)
     rng = np.random.default_rng() if rng is None else rng
     Zdesign = sample_masks(N_run, d, rng)
-    fl = floor_from_design(Zdesign, s_eff, K, family_wise)
+    fl = floor_from_design(Zdesign, s_eff, K, family_wise,
+                           sigma_obs=sigma_obs, m_hat=m_hat, B=B)
     return BudgetPlan(N_pred=N_pred, N_run=N_run, realized_floor=fl,
                       ratio=fl / beta_min, clamped=(N_pred < feas))
 
@@ -619,28 +758,58 @@ class SigmaEffUCB:
 
 def sigma_eff_ucb(Z: np.ndarray, y: np.ndarray, K: int, sigma_obs: float,
                   d: int = None, delta_pilot: float = None,
-                  cross_fit: bool = True, C_m: float = None) -> SigmaEffUCB:
+                  cross_fit: bool = True, C_m: float = None,
+                  B_known: float = None) -> SigmaEffUCB:
     """R2.1 -- empirical-Bernstein one-sided UPPER bound on sigma_eff.
 
     Returns a SigmaEffUCB. `s_eff_ucb` upper-bounds the true sigma_eff with
     probability >= 1 - delta_pilot, so plugging it into the floor makes Theorem 1
-    UNCONDITIONAL up to the union-bounded delta (which now budgets this pilot
-    event via DELTA_SPLIT = 4).
+    UNCONDITIONAL up to the union-bounded delta (which budgets this pilot event
+    as the fourth event via DELTA_SPLIT = 4).
 
-    delta_pilot defaults to 1/pK, matching the per-event level of the other three
-    failure events under the split union bound.
+    BLOCKING FIXES (report point 3).
+
+    (a) delta_pilot SHARE.  The pilot is one of nu = 4 union-bound events, so its
+        honest share of the total delta = 1/pK is delta/4 = 1/(4 pK), NOT the
+        whole 1/pK.  We default delta_pilot = 1/(DELTA_SPLIT_UCB * pK) with
+        DELTA_SPLIT_UCB = 4, so the four events (design, query-noise, leakage,
+        pilot) each spend delta/4 and their union is delta.  (Pass delta_pilot
+        explicitly to override.)
+
+    (b) KNOWN RANGE BOUND.  The empirical-Bernstein range term needs a KNOWN
+        upper bound B on |r_t| (so r_t^2 in [0, B^2]).  The pre-fix code used the
+        sample maximum max_t r_t^2, which is itself random and not a valid a
+        priori range, breaking the one-sided guarantee.  We now require a known
+        B_known (e.g. from the bounded model output range: for a probability
+        output y in [0,1] and held-out residual, |r_t| <= 1, so B_known = 1; for
+        a logit, pass the known logit magnitude bound).  If B_known is None we
+        fall back to the sample max but FLAG it via bernstein_range being
+        computed on that value -- callers that need the strict guarantee must
+        pass B_known.
+
+    (c) sigma_obs UNCERTAINTY.  This bound upper-bounds the MISMATCH energy given
+        sigma_obs.  If sigma_obs is itself estimated, the caller must either pass
+        an independently upper-bounded sigma_obs or fold its own confidence term
+        in; the UCB here is conditional on sigma_obs being a valid upper bound
+        (documented, not silently assumed).
     """
     C_m = CONSTANTS.C_M if C_m is None else C_m
     d = Z.shape[1] if d is None else d
     pk = p_K(d, K)
-    delta_pilot = (1.0 / pk) if delta_pilot is None else delta_pilot
+    # (a) pilot gets delta/4, the fourth of the four union-bound events.
+    delta_pilot = (1.0 / (CONSTANTS.DELTA_SPLIT_UCB * pk)) \
+        if delta_pilot is None else delta_pilot
 
     resid = _held_out_residual(Z, y, K, cross_fit)
     n = resid.size
     sq = resid ** 2                                   # r_t^2 in [0, B^2]
     mse = float(sq.mean())
     m_hat_raw = mse - sigma_obs ** 2
-    B2 = float(sq.max()) if n else 0.0                # B^2 = max r_t^2
+    # (b) known range bound; fall back to sample max only if none supplied.
+    if B_known is not None:
+        B2 = float(B_known) ** 2
+    else:
+        B2 = float(sq.max()) if n else 0.0            # NOT a valid a-priori range
     V_hat = float(sq.var(ddof=1)) if n > 1 else 0.0   # sample var of r_t^2
     L = math.log(1.0 / delta_pilot)
     # empirical-Bernstein one-sided margin (Maurer-Pontil): the (7/3) range term
@@ -693,13 +862,27 @@ def cov(values) -> float:
 
 
 def false_sign_rate(beta_run: np.ndarray, beta_exact: np.ndarray, fl: float,
-                    fl_exact: float):
-    """Direct forward test against a known/exact beta. A coordinate is scored
-    only if BOTH the run and the exact fit resolve it (an exact-unresolved coord
-    carries no trustworthy ground-truth sign). Returns (n_false, n_scored)."""
+                    fl_exact: float = None, tol: float = 1e-9):
+    """Direct forward test against the EXACT projection (blocking fix, point 6).
+
+    Theorem 1's forward claim is that EVERY coordinate the RUN certificate
+    declares must match the true sign.  The correct denominator is therefore all
+    run-certified coordinates, scored against sgn(beta_exact) -- NOT the
+    intersection {run-certified AND exact-certified}, which silently drops any
+    run-certified coordinate the exact fit happens to leave in its own unresolved
+    band and so cannot expose a run false sign there.
+
+    Since beta_exact is the exact projection, its sign is trustworthy except when
+    the true coefficient is (numerically) zero; a coordinate with
+    |beta_exact| <= tol has no defined sign and is excluded from scoring (it can
+    be neither a correct nor an incorrect sign).  fl_exact is accepted for
+    signature back-compat but is NOT used to gate scoring.
+
+    Returns (n_false, n_scored).
+    """
     run_cert = np.abs(beta_run) > fl
-    exact_cert = np.abs(beta_exact) > fl_exact
-    scored = run_cert & exact_cert
+    has_true_sign = np.abs(beta_exact) > tol
+    scored = run_cert & has_true_sign
     false = scored & (np.sign(beta_run) != np.sign(beta_exact))
     return int(false.sum()), int(scored.sum())
 
@@ -791,13 +974,18 @@ class DiagnosticTrace:
 
 def sweep_prefix_ladder(Zbank: np.ndarray, ybank: np.ndarray, N_list,
                         s_eff: float, d: int, K: int,
-                        family_wise: bool = True) -> DiagnosticTrace:
+                        family_wise: bool = True, sigma_obs: float = None,
+                        m_hat: float = None, B: float = None) -> DiagnosticTrace:
     """Apply the single-budget theorem at each rung of a prefix-nested ladder.
 
     R1.4 (Path A): the floor at each rung uses Cest MEASURED from that rung's
     realized design prefix Zbank[:N] (floor_from_design), not the frozen C_FLOOR.
     We also record the old frozen-C_FLOOR floor at the first/last rung so drivers
     can report the before/after floor inflation.
+
+    Blocking fix: when (sigma_obs, m_hat, B) are supplied the per-rung floor is
+    the honest TWO-TERM certified floor; otherwise the legacy single-scalar
+    s_eff floor is used (synthetic callers).
 
     Primary output: sign_flips (the guarantee -- must be 0). Secondary outputs:
     count_monotone / set_nested (workflow diagnostics, near-guaranteed by the
@@ -809,7 +997,8 @@ def sweep_prefix_ladder(Zbank: np.ndarray, ybank: np.ndarray, N_list,
     for N in N_list:
         Zc = Zbank[:N]
         beta, _, _ = ols_fit(Zc, ybank[:N], K)
-        fl = floor_from_design(Zc, s_eff, K, family_wise)       # realized Cest
+        fl = floor_from_design(Zc, s_eff, K, family_wise,
+                               sigma_obs=sigma_obs, m_hat=m_hat, B=B)  # realized Cest
         cur_set, _ = certified_set(beta, fl)
         if tr.floor_first is None:
             tr.floor_first, tr.cert_first = fl, len(cur_set)
@@ -919,7 +1108,8 @@ def _mean_pairwise_jaccard(sets):
 
 
 def reseed_audit(query_fn, d, sigma_obs, N, R, K, s_eff,
-                 seed0=0, family_wise=True, p_keep=None, split=None):
+                 seed0=0, family_wise=True, p_keep=None, split=None,
+                 m_hat=None, B=None):
     """Run the independent-reseeding audit on one probe.
 
     query_fn(Z): (N,d) binary masks -> (N,) model outputs -- the ONLY model
@@ -961,7 +1151,8 @@ def reseed_audit(query_fn, d, sigma_obs, N, R, K, s_eff,
             beta, _, _ = ols_fit(Z, y, K)
         except np.linalg.LinAlgError:
             continue
-        fl = floor_from_design(Z, s_eff, K, family_wise, split=split)
+        fl = floor_from_design(Z, s_eff, K, family_wise, split=split,
+                               sigma_obs=sigma_obs, m_hat=m_hat, B=B)
         cset, _ = certified_set(beta, fl)
         betas.append(beta)
         floors.append(fl)

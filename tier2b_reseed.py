@@ -81,11 +81,19 @@ def audit_probe(probe: Probe, N, R, K, seed0=0, ucb=False):
     (split=3, the default)."""
     if N <= bl.p_K(probe.d, K):
         return None
-    s_eff, _ = pilot_sigma_eff(probe, K, seed=seed0, ucb=ucb)
+    # Pilot once (as deployed); grab the mismatch breakdown so the per-seed floor
+    # is the honest TWO-TERM certified floor (report point 1/2). detail=True gives
+    # the MismatchEstimate (plain) or SigmaEffUCB (ucb).
+    s_eff, est = pilot_sigma_eff(probe, K, seed=seed0, ucb=ucb, detail=True)
+    if ucb:
+        m_for_floor, B_for_floor = est.m_ucb, getattr(probe, "B_known", None)
+    else:
+        m_for_floor, B_for_floor = est.m_hat, est.B_hat
     split = 4 if ucb else None
     res = bl.reseed_audit(
         query_fn=probe.query, d=probe.d, sigma_obs=probe.sigma_obs,
-        N=N, R=R, K=K, s_eff=s_eff, seed0=seed0 + 1000, split=split)
+        N=N, R=R, K=K, s_eff=s_eff, seed0=seed0 + 1000, split=split,
+        m_hat=m_for_floor, B=B_for_floor)
     return res if (res is not None and res.well_posed) else None
 
 

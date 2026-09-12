@@ -140,11 +140,14 @@ class Probe:
       query(Z) : (N, d) binary masks -> (N,) model outputs  (the black box)
       sigma_obs: query-noise scale (0 for deterministic backbones)
     """
-    def __init__(self, d, target, query_fn, sigma_obs):
+    def __init__(self, d, target, query_fn, sigma_obs, B_known=None):
         self.d = d
         self.target = target
         self.query = query_fn
         self.sigma_obs = sigma_obs
+        # known a-priori bound on |held-out residual| for the empirical-Bernstein
+        # UCB pilot (report point 3); None => fall back to sample max (flagged).
+        self.B_known = B_known
 
 
 def nlp_probe(clf, sentence, reference, max_free):
@@ -154,14 +157,24 @@ def nlp_probe(clf, sentence, reference, max_free):
         return None
     Xb = clf.make_baseline(ctx, reference)
     target = clf.target_class(ctx)
-    # probabilistic backbone: estimate sigma_obs by repeated queries
+    # Report point 8: a `.eval()` forward pass is DETERMINISTIC, so re-querying
+    # the SAME masks returns identical probabilities and sigma_obs is ~0 (it is
+    # NOT >0 merely because the output is a probability). We measure it honestly
+    # by repeated identical queries: on a deterministic backbone this is ~0 and
+    # the floor is mismatch-driven, exactly like the image tier. A genuinely
+    # stochastic query-noise regime would require dropout / stochastic inference
+    # turned on deliberately (not done here) or the synthetic tier.
     rng = np.random.default_rng(0)
     Zp = bl.sample_masks(16, d, rng)
     cols = [clf.query(ctx, Xb, Zp, target) for _ in range(8)]
     sigma_obs = float(np.stack(cols, 0).std(axis=0).mean())
-    return Probe(d, target,
-                 query_fn=lambda Z: clf.query(ctx, Xb, Z, target),
-                 sigma_obs=sigma_obs)
+    p = Probe(d, target,
+              query_fn=lambda Z: clf.query(ctx, Xb, Z, target),
+              sigma_obs=sigma_obs)
+    # class-probability output y in [0,1] => |held-out residual| <= 1, a valid
+    # a-priori range bound for the empirical-Bernstein UCB pilot (report point 3).
+    p.B_known = 1.0
+    return p
 
 
 def image_probe(clf, img, reference, grid):
@@ -198,14 +211,22 @@ def pilot_sigma_eff(probe: Probe, K, seed=0, detail=False, ucb=False,
     rng = np.random.default_rng(seed + 12345)
     Z = bl.sample_masks(max(N0, 3 * bl.p_K(probe.d, K)), probe.d, rng)
     y = probe.query(Z)
+    # Report point 3: cross-fit the held-out residual for EVERY K, not only K=2.
+    # The paper describes a held-out / cross-fitted pilot at K=1 too; the old
+    # cross_fit=(K==2) left K=1 using in-sample residuals, contradicting the text.
     if ucb:
+        # B_known: a valid a-priori range for |held-out residual|. For a
+        # probability output y in [0,1], |r_t| <= 1; for a logit backbone pass the
+        # known logit magnitude bound via probe.B_known if set, else fall back.
+        B_known = getattr(probe, "B_known", None)
         u = bl.sigma_eff_ucb(Z, y, K, probe.sigma_obs, d=probe.d,
-                             delta_pilot=delta_pilot, cross_fit=(K == 2))
+                             delta_pilot=delta_pilot, cross_fit=True,
+                             B_known=B_known)
         if detail:
             return u.s_eff_ucb, u
         return u.s_eff_ucb, u.m_ucb
     est = bl.estimate_mismatch_detail(Z, y, K, probe.sigma_obs,
-                                      cross_fit=(K == 2))
+                                      cross_fit=True)
     s_eff = bl.sigma_eff(probe.sigma_obs, est.m_hat)
     if detail:
         return s_eff, est
@@ -227,15 +248,22 @@ def forward_backward_on_probe(probe: Probe, N_list, beta_min, K, seed=0):
     N_dom = bl.leakage_domination_N(est.m_hat, est.B_hat, probe.d, K)
     dominated = bool(N_min >= N_dom)
 
-    # FORWARD: prefix-nested bank, single-budget theorem at each rung
+    # FORWARD: prefix-nested bank, single-budget theorem at each rung.
+    # Report point 1/2: pass the mismatch breakdown so each rung's floor is the
+    # honest TWO-TERM certified floor (sigma_obs, m_hat, B) rather than the
+    # absorbed single-scalar sigma_eff.
     N_max = max(N_list)
     rng = np.random.default_rng(seed + 777)
     Zbank = bl.sample_masks(N_max, probe.d, rng)
     ybank = probe.query(Zbank)
-    trace = bl.sweep_prefix_ladder(Zbank, ybank, N_list, s_eff, probe.d, K)
+    trace = bl.sweep_prefix_ladder(Zbank, ybank, N_list, s_eff, probe.d, K,
+                                   sigma_obs=probe.sigma_obs, m_hat=est.m_hat,
+                                   B=est.B_hat)
 
-    # BACKWARD: predict N, clamp, realized floor
-    plan = bl.plan_budget(s_eff, beta_min, probe.d, K)
+    # BACKWARD: predict N with the empirical planning constant, report the honest
+    # two-term realized floor.
+    plan = bl.plan_budget(s_eff, beta_min, probe.d, K,
+                          sigma_obs=probe.sigma_obs, m_hat=est.m_hat, B=est.B_hat)
 
     return dict(d=probe.d, pK=bl.p_K(probe.d, K), m_hat=m_hat, sigma_eff=s_eff,
                 m_raw=est.m_raw, m_negative=est.negative,     # R1.6
@@ -256,15 +284,35 @@ def forward_backward_on_probe(probe: Probe, N_list, beta_min, K, seed=0):
 # =========================================================================== #
 #  Exact-beta sign-correctness: dense OLS on the FULL cube 2^d (d <= MAX_EXACT_D)
 # =========================================================================== #
-def exact_cube(d, rng):
-    """Enumerate ALL 2^d masks (shuffled). Fitting OLS on this gives the EXACT
-    population degree-K projection -- the order is irrelevant to the fit, but we
-    shuffle so a PREFIX (reused for pilot/run) is i.i.d. uniform rather than the
-    structured binary-counting order, which would give a singular pilot Gram."""
+def exact_cube(d, rng=None):
+    """Enumerate ALL 2^d masks (in binary-counting order). Fitting OLS on the
+    full cube gives the EXACT population degree-K projection; the row order is
+    irrelevant to that fit.
+
+    Blocking fix (report point 6): the pre-fix code SHUFFLED the cube and then
+    took a PREFIX for the pilot / deployment run, calling it "i.i.d. uniform".
+    A prefix of a random permutation is sampling WITHOUT replacement, not i.i.d.
+    Bernoulli masks -- it is not the finite-budget experiment Theorem 1 is about.
+    We no longer draw prefixes: the caller enumerates the cube ONCE (this
+    function) to cache g(z), and then draws i.i.d. cube-index samples WITH
+    replacement (iid_from_cube) for each finite-budget run, looking up the cached
+    outputs.  No extra black-box queries are spent.  `rng` is unused now and kept
+    only for signature back-compat.
+    """
     n = 1 << d
     bits = ((np.arange(n)[:, None] >> np.arange(d)[None, :]) & 1).astype(float)
-    rng.shuffle(bits)
     return bits
+
+
+def iid_from_cube(cube_bits, y_cube, N, rng):
+    """Draw N i.i.d.-uniform masks WITH REPLACEMENT from the enumerated cube and
+    return (Z, y) by looking up cached outputs -- an honest finite-budget draw
+    from the uniform product measure at zero extra query cost (report point 6).
+    Sampling cube-row indices uniformly with replacement is exactly i.i.d.
+    Bernoulli(1/2) masks over the d units."""
+    n = cube_bits.shape[0]
+    idx = rng.integers(0, n, size=N)
+    return cube_bits[idx], y_cube[idx]
 
 
 def exact_calls(d):
@@ -273,41 +321,50 @@ def exact_calls(d):
 
 
 def exact_sign_check(probe: Probe, beta_min, K, seed=0):
-    """Direct sign-correctness on ONE small-d probe.
+    """Direct sign-correctness on ONE small-d probe (report point 6).
 
-    Enumerate the cube ONCE (the only model query for this probe); reuse a
-    PREFIX for the pilot (sigma_eff) and the deployment-budget run estimate, and
-    the FULL cube for exact beta. A certified coordinate is scored only if exact
-    beta also resolves it. Returns a dict, or None if d is too large / the run
-    budget is not well-posed.
+    Enumerate the cube ONCE (the only model queries for this probe) and cache
+    g(z).  The pilot and the deployment-budget run then draw i.i.d. cube-index
+    samples WITH REPLACEMENT from the cache (iid_from_cube) -- an honest
+    finite-budget experiment from the uniform product measure -- instead of taking
+    a prefix of a shuffled cube (which is sampling WITHOUT replacement and is not
+    the i.i.d. Bernoulli draw Theorem 1 is about).  The FULL cube gives the exact
+    projection beta.  Scoring is against sgn(beta_exact) for EVERY run-certified
+    coordinate (false_sign_rate).  Returns a dict, or None if d is too large / the
+    run budget is not well-posed.
     """
     if probe.d > MAX_EXACT_D:
         return None
-    Zc = exact_cube(probe.d, np.random.default_rng(seed + 2))
-    yc = probe.query(Zc)                       # the one expensive call
+    Zc = exact_cube(probe.d)
+    yc = probe.query(Zc)                       # the one expensive call (cached)
     Nc = Zc.shape[0]
+    rng = np.random.default_rng(seed + 2)
 
-    # pilot sigma_eff from a prefix
+    # pilot sigma_eff from an i.i.d.-with-replacement draw off the cached cube,
+    # cross-fitted for every K (report point 3). B_hat = sup |held-out residual|.
     n_pilot = min(max(bl.pilot_N0(probe.d, K), 3 * bl.p_K(probe.d, K)), Nc)
-    m_hat = bl.estimate_mismatch_from_residual(
-        Zc[:n_pilot], yc[:n_pilot], K, probe.sigma_obs, cross_fit=(K == 2))
-    s_eff = bl.sigma_eff(probe.sigma_obs, m_hat)
+    Zp, yp = iid_from_cube(Zc, yc, n_pilot, rng)
+    est = bl.estimate_mismatch_detail(Zp, yp, K, probe.sigma_obs, cross_fit=True)
+    s_eff = bl.sigma_eff(probe.sigma_obs, est.m_hat)
 
-    # deployment-budget run estimate, a prefix of the same cube
-    plan = bl.plan_budget(s_eff, beta_min, probe.d, K)
+    # deployment-budget run: an i.i.d.-with-replacement draw off the same cache
+    plan = bl.plan_budget(s_eff, beta_min, probe.d, K, rng=rng,
+                          sigma_obs=probe.sigma_obs, m_hat=est.m_hat, B=est.B_hat)
     N_run = min(plan.N_run, Nc)
     if N_run <= bl.p_K(probe.d, K):
         return None
-    Zrun = Zc[:N_run]
-    beta_run, _, _ = bl.ols_fit(Zrun, yc[:N_run], K)
-    fl_run = bl.floor_from_design(Zrun, s_eff, K)         # realized Cest (R1.4)
+    Zrun, yrun = iid_from_cube(Zc, yc, N_run, rng)
+    beta_run, _, _ = bl.ols_fit(Zrun, yrun, K)
+    # two-term certified floor at the run design (report point 1/2)
+    fl_run = bl.floor_from_design(Zrun, s_eff, K, sigma_obs=probe.sigma_obs,
+                                  m_hat=est.m_hat, B=est.B_hat)
 
-    # EXACT beta on the full cube
+    # EXACT beta on the full cube; its floor is the run-independent full-cube floor
     beta_exact, _, _ = bl.ols_fit(Zc, yc, K)
-    fl_exact = bl.floor_from_design(Zc, s_eff, K)         # realized Cest (R1.4)
+    fl_exact = bl.floor_from_design(Zc, s_eff, K, sigma_obs=probe.sigma_obs,
+                                    m_hat=est.m_hat, B=est.B_hat)
 
-    n_false, n_scored = bl.false_sign_rate(beta_run, beta_exact,
-                                           fl_run, fl_exact)
+    n_false, n_scored = bl.false_sign_rate(beta_run, beta_exact, fl_run)
     pm = bl.power_miss_stats(beta_run, beta_exact, fl_run, fl_exact)   # R1.9
     return dict(d=probe.d, N_run=N_run, cube_N=Nc, n_calls=Nc,
                 n_false_sign=n_false, n_scored=n_scored,

@@ -6,16 +6,24 @@ ordinary-least-squares core of degree-`K` LIME surrogates: coefficients whose
 fitted magnitude clears the floor have **certified signs** at the chosen query
 budget; coefficients below it are reported as **unresolved** rather than zero.
 
-The whole codebase is one inequality (Theorem 1) read in two directions:
+The whole codebase is one inequality (Theorem 1) read in two directions. The
+certified floor carries the two Bernstein leakage terms **explicitly** (nothing
+absorbed into a sub-1 constant):
 
 ```
 ||beta_hat - beta||_inf  <=  floor(N, rho)
-floor(N, rho) = C_floor * sigma_eff * sqrt(2 log pK / N)
-sigma_eff     = sigma_obs + C_m * sqrt(m_>K)
+floor(N, rho) = C_est * [ sigma_obs*sqrt(2L/N)          # query noise
+                          + sqrt(2*m_>K*L/N)            # leakage, sub-Gaussian
+                          + (2/3)*B*L/N ]               # leakage, sub-exponential
+L = log(SPLIT * pK / delta),   C_est measured per run,   B = ||r_>K||_inf
 ```
 
 * **Forward** — the guarantee: `|beta_hat_S| > floor`  ⇒  the sign of `beta_S` is correct.
-* **Backward** — the budget rule (Eq. 8): `N ≳ 2 C_budget² σ_eff² log pK / β_min²`.
+* **Backward** — the budget rule (Eq. 8), a planning heuristic: `N ≳ 2 C_budget² σ_eff² log(SPLIT·pK/δ) / β_min²` with `σ_eff = σ_obs + C_m√m_>K`.
+
+Note the asymmetry: the **certified floor** uses `C_est` (per-run) and the two
+explicit Bernstein terms; the **budget prediction** uses the empirical `C_m` /
+`C_budget` planning constants. `C_m` never enters a certified radius.
 
 Everything that is neither a forward sign check nor a backward budget check
 (set nesting, count monotonicity) is treated as a *workflow diagnostic* and
@@ -31,7 +39,7 @@ constructed only inside a driver's `main()` after arguments are supplied.
 
 | File | Torch? | Role |
 |------|--------|------|
-| `bl_core.py` | no | The shared numerical core. Degree-`K` Walsh feature machinery (`p_K`, `feature_subsets`, `design_matrix`, `standardize_columns`, `sample_masks`), dense OLS (`ols_fit`), the floor (`sigma_eff`, `floor_value`, `certified_set`), the budget rule (`predict_budget`, `feasibility_floor`, `plan_budget`), pilot estimation of `sigma_eff` (`estimate_mismatch_from_residual`, `pilot_N0`), and the prefix-ladder diagnostic (`sweep_prefix_ladder`). **The two and only constants** live here in `CONSTANTS` and are frozen after Tier-1 calibration. |
+| `bl_core.py` | no | The shared numerical core. Degree-`K` Walsh feature machinery (`p_K`, `feature_subsets`, `design_matrix`, `standardize_columns`, `sample_masks`), dense OLS (`ols_fit`), the floor (`sigma_eff`, `floor_value`, `certified_set`), the budget rule (`predict_budget`, `feasibility_floor`, `plan_budget`), pilot estimation of `sigma_eff` (`estimate_mismatch_from_residual`, `pilot_N0`), and the prefix-ladder diagnostic (`sweep_prefix_ladder`). The frozen planning constants (`C_M`, `C_BUDGET`) plus the per-run `C_est` live here in `CONSTANTS` and are frozen after Tier-1 calibration. |
 | `bl_models.py` | **yes** | The only Torch code. Two query-only black boxes: `TextClassifier` (sentence + token mask → class probability, `σ_obs > 0`) and `ImageClassifier` (image + cell mask → class logit, `σ_obs ≈ 0`). These map `(input, binary mask) → model output` and nothing else; all certification math is in `bl_core.py`. |
 | `tier1_synthetic.py` | no | **Tier 1 — synthetic, ground truth known.** Calibrates the two constants and proves the two-direction collapse: leakage linchpin (fixes `C_M`), forward SDR-collapse curve, backward budget-constant recovery (fixes `C_BUDGET`), and the regime grid spanning the two axes of `σ_eff`. This is the *only* place constants are fit. |
 | `tier1b_cest_transfer.py` | no | **Tier 1b — Cest transfer study (referee R1.4).** Design-only (no model): measures the forward floor constant `Cest = max{γ^{-1/2}, ‖Σ̂⁻¹‖∞}` as a function of the coordinate-to-budget ratio `pK/N`. Three questions: (Q1) confirms Cest grows with `pK` at fixed `N` (the referee's premise); (Q2) tests whether Cest **collapses onto one curve in `pK/N`** across very different `(d, K)` — the condition under which a frozen value transfers; (Q3) evaluates Cest at the actually deployed points (`d=30`/`K=1`, `d=49`/`K=1`, `K=2` enumeration) and reports the gap against the frozen `C_FLOOR`. |
@@ -44,9 +52,9 @@ constructed only inside a driver's `main()` after arguments are supplied.
 
 | Constant | Default | Role |
 |----------|---------|------|
-| `C_M` | `0.833` (frozen from Tier-1 large-N rows, N ≥ 2000) | Leakage constant (Lemma 1); enters `σ_eff`. Was 1.24 pre-revision; the change is a normalizer redefinition (R1.2/R1.3) plus a large-N freeze that removes the R1.5 sub-exp inflation — not a re-fit. See below. |
+| `C_M` | `0.830` (mean over d∈{15,24,30,49}, frozen from Tier-1 large-N rows, N ≥ 2000) | **Empirical planning/calibration quantity only — NOT a certificate constant.** The certified floor now carries the two Bernstein leakage terms explicitly (`√(2mL/N)+(2/3)BL/N`), so `C_M` no longer sets any certified radius; it enters only the backward budget rule (`predict_budget`) and pilot reporting. Was absorbed into `σ_eff` pre-fix, which under-covered the leading term since 0.830<1. |
 | `C_FLOOR` | `1.0` | Floor-bound constant (forward); theory = 1 for the orthonormal ±1 design, empirical ≥ 1 expected. |
-| `C_BUDGET` | `1.535` | Budget-rule constant (backward), back-solved at Tier 1 under the split log factor (R1.2). Was 1.81 pre-revision. |
+| `C_BUDGET` | `1.552` (mean over d∈{15,24,30,49}) | Budget-rule constant (backward), back-solved at Tier 1 under the split log factor (R1.2). Re-calibrate after any floor/estimator change. |
 
 `C_FLOOR` (the bound) and `C_BUDGET` (the budget invert) are deliberately kept as
 separate objects: inverting the budget with `C_FLOOR` lands below the feasibility
@@ -69,7 +77,7 @@ three are auditable against the pre-revision numbers.
   probabilistic events; the pilot scale is handled as Theorem 1's explicit
   *conditioning hypothesis* (set `DELTA_SPLIT = 4` to also budget the pilot
   event). With `δ = 1/pK` this turns the old `2 log pK` into
-  `2 log pK + 2 log SPLIT`, a bounded additive correction that vanishes as `pK`
+  `2 log pK + log SPLIT`, a bounded additive correction that vanishes as `pK`
   grows (`< 8%` on the floor at `pK = 50`, `< 2%` at `pK ≈ 1225`). Passing
   `split=1, delta=1/pK` reproduces the old factor exactly.
 
@@ -147,9 +155,50 @@ frozen-`C_FLOOR` floor, so the before/after is visible.
 
 ---
 
+## Correctness fixes (this revision batch — floor / estimator / pilot / enumeration)
 
+These change the floor and the estimator, so **all tables must be regenerated**
+and the two planning constants **re-calibrated** (Tier 1) before any number is
+reported.
 
-## Installation
+* **Two-term certified floor.** The floor no longer folds the leakage into
+  `C_m√m · sqrt(2L/N)` (which only upper-bounds the leading Lemma-1 term when
+  `C_m ≥ 1`, whereas the calibrated `C_m = 0.830 < 1`). `certified_floor` /
+  `floor_from_design(..., sigma_obs, m_hat, B)` carry
+  `C_est·[σ_obs√(2L/N) + √(2mL/N) + (2/3)BL/N]`. The `B/N` sub-exponential term
+  is carried at all `N`, so no "dominated throughout `N ≳ pK`" assumption is
+  needed. `C_m` survives only as the backward planning quantity.
+* **Intercept-augmented OLS / Gram.** `p_K` counts the intercept (`S = ∅`), so
+  `ols_fit`, the Gram, `C_est` (`realized_cest` / `measure_conditioning`) and the
+  baselines now use the full augmented design `[1, χ_i, χ_iχ_j, …]`
+  (`design_matrix(..., intercept=True)`). Regressing `y − ȳ` on un-centered
+  Walsh columns is only equal to full OLS at the population, not at finite `N`.
+* **Upper-confidence pilot.** `sigma_eff_ucb` now (a) spends `δ/4 = 1/(4pK)` on
+  the pilot event (`DELTA_SPLIT_UCB = 4`), not the whole `1/pK`, and (b) uses a
+  **known** range bound `B_known` for the empirical-Bernstein term (probability
+  outputs ⇒ `B_known = 1`) instead of the random sample maximum. Cross-fitting is
+  used for **every** `K` (not only `K = 2`).
+* **Enumeration = i.i.d. with replacement.** The exact-β tier caches the full
+  cube once (`exact_cube`) and draws i.i.d. cube indices **with replacement**
+  (`iid_from_cube`) for the pilot and the run, instead of taking a prefix of a
+  shuffled cube (which is sampling *without* replacement). Scoring
+  (`false_sign_rate`) now checks **every** run-certified coordinate against
+  `sgn(β_exact)` (with a zero-tolerance), not only the run∩exact intersection.
+* **No anti-conservative fallback.** `realized_cest` **raises** on an
+  ill-conditioned Gram (run unresolved) instead of returning `C_FLOOR = 1`;
+  `ols_fit` and `realized_cest` share one cutoff `COND_MAX = 1e8`.
+* **Deterministic NLP `σ_obs`.** A `.eval()` forward pass is deterministic, so
+  `σ_obs ≈ 0` and the NLP floor is mismatch-driven, like the image tier — the
+  probability output does not by itself make `σ_obs > 0`. Genuine query-noise
+  regimes are the synthetic tier (or deliberately stochastic inference).
+
+> **Re-calibration required.** Because the floor and the estimator changed, run
+> `python tier1_synthetic.py all` under this code, read the new `C_M`, `C_BUDGET`
+> and the `C_est` d-sweep, and update `bl_core.Constants` before regenerating
+> Tier 2 / 2b / 3 / baselines. The values currently in `Constants` are the
+> pre-fix numbers and are placeholders until that run.
+
+---
 
 The numerical core and the synthetic / feasibility / self-test paths need only
 **NumPy**. The black-box drivers additionally need PyTorch, torchvision,
@@ -201,10 +250,10 @@ python tier3_feasibility.py
 python tier2b_reseed.py selftest
 ```
 
-`python tier1_synthetic.py leakage` reproduces `C_m = 0.83` (revised Table 2,
+`python tier1_synthetic.py leakage` reproduces `C_m ≈ 0.83` (revised Table 2,
 frozen from the large-N rows under the R1.2 split normalizer; the all-N mean
 0.81 is printed alongside for transparency, and the small-N drift is the R1.5
-sub-exp term). The full `all` run also recovers `C_budget ≈ 1.54` (was 1.81).
+sub-exp term). The full `all` run also recovers `C_budget ≈ 1.55`.
 
 ### 2. Black-box, using the default model
 

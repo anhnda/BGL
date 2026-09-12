@@ -60,8 +60,20 @@ def certify_floor(beta, s_eff, d, N, K, Z=None):
     The comparison in this file always passes Z, so the floor uses the true
     design constant on the same bank the bootstrap and Wald rules see.
     """
+def certify_floor(beta, s_eff, d, N, K, Z=None, sigma_obs=None, m_hat=None,
+                  B=None):
+    """Simultaneous floor rule -> boolean mask over coordinates.
+
+    R1.4 (Path A): Cest is measured from the realized design Z.  Report point 1/2:
+    when (sigma_obs, m_hat, B) are supplied the floor is the honest TWO-TERM
+    certified floor on that design; otherwise it falls back to the legacy
+    single-scalar form.  The comparison always passes Z (and, where available, the
+    breakdown), so the floor uses the true design constant on the same bank the
+    bootstrap and Wald rules see.
+    """
     if Z is not None:
-        fl = bl.floor_from_design(Z, s_eff, K)
+        fl = bl.floor_from_design(Z, s_eff, K, sigma_obs=sigma_obs,
+                                  m_hat=m_hat, B=B)
     else:
         fl = bl.floor_value(s_eff, d, N, K)
     return np.abs(beta) > fl
@@ -75,17 +87,19 @@ def certify_wald(Z, y, K, sigma_obs, alpha=0.05):
     backbone sigma_obs ~ 0 so every SE -> 0 and the rule certifies everything.
     Returns (boolean mask, all_certified_flag)."""
     d = Z.shape[1]
-    X = bl.design_matrix(Z, K)
+    # Report point 5: use the SAME augmented intercept design as the certified
+    # OLS, then drop the intercept row/coordinate, so all three rules share one fit.
+    X = bl.design_matrix(Z, K, intercept=True)
     N = X.shape[0]
     Xs, scale = bl.standardize_columns(X)
     G = (Xs.T @ Xs) / N
     Ginv = np.linalg.inv(G)
-    beta_std = Ginv @ (Xs.T @ (y - y.mean())) / N
-    beta = beta_std / scale
+    beta_std = Ginv @ (Xs.T @ y) / N
+    beta = (beta_std / scale)[1:]                 # drop intercept
     # SE on standardized scale, then divide by column scale to original units
     z = abs(_z_quantile(1 - alpha / 2))
     se_std = sigma_obs * np.sqrt(np.diag(Ginv) / N)
-    se = se_std / scale
+    se = (se_std / scale)[1:]
     # sigma_obs ~ 0 -> se ~ 0 -> certifies all (the degeneracy)
     cert = np.abs(beta) > z * se
     all_cert = bool(cert.all())
@@ -112,22 +126,22 @@ def certify_wald_residual(Z, y, K, alpha=0.05):
     Returns (boolean mask, all_certified_flag).
     """
     d = Z.shape[1]
-    X = bl.design_matrix(Z, K)
+    # Report point 5: augmented intercept design, same fit as the certified OLS.
+    X = bl.design_matrix(Z, K, intercept=True)
     N = X.shape[0]
     pk = bl.p_K(d, K)
     Xs, scale = bl.standardize_columns(X)
     G = (Xs.T @ Xs) / N
     Ginv = np.linalg.inv(G)
-    y_c = y - y.mean()
-    beta_std = Ginv @ (Xs.T @ y_c) / N
-    beta = beta_std / scale
+    beta_std = Ginv @ (Xs.T @ y) / N              # intercept is a fitted column
+    beta = (beta_std / scale)[1:]                 # drop intercept
     # residual variance from the actual fit (absorbs mismatch + query noise)
-    resid = y_c - Xs @ beta_std
+    resid = y - Xs @ beta_std
     dof = max(N - pk, 1)
     s2 = float((resid ** 2).sum() / dof)
     z = abs(_z_quantile(1 - alpha / 2))
     se_std = math.sqrt(s2) * np.sqrt(np.diag(Ginv) / N)
-    se = se_std / scale
+    se = (se_std / scale)[1:]
     cert = np.abs(beta) > z * se
     return cert, bool(cert.all())
 
@@ -178,7 +192,7 @@ def compare_on_probe(probe: Probe, N, K, B, seed=0):
     dict of decisions + agreement counts, or None if not well-posed."""
     if N <= bl.p_K(probe.d, K):
         return None
-    s_eff, _ = pilot_sigma_eff(probe, K, seed)
+    s_eff, est = pilot_sigma_eff(probe, K, seed, detail=True)
 
     rng = np.random.default_rng(seed + 99)
     Z = bl.sample_masks(N, probe.d, rng)
@@ -188,7 +202,9 @@ def compare_on_probe(probe: Probe, N, K, B, seed=0):
     except np.linalg.LinAlgError:
         return None
 
-    c_floor = certify_floor(beta, s_eff, probe.d, N, K, Z=Z)
+    c_floor = certify_floor(beta, s_eff, probe.d, N, K, Z=Z,
+                            sigma_obs=probe.sigma_obs, m_hat=est.m_hat,
+                            B=est.B_hat)                              # two-term
     c_wald, wald_all = certify_wald(Z, y, K, probe.sigma_obs)      # naive (straw man)
     c_waldr, waldr_all = certify_wald_residual(Z, y, K)           # R1.10 fair Wald
     c_boot = certify_bootstrap(Z, y, K, B, np.random.default_rng(seed + 7))
