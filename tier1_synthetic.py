@@ -388,19 +388,28 @@ def sweep_d_stability(d_grid=(15, 24, 30, 49), n_active=4):
     cms = [r[2] for r in rows]
     cbs = [r[3] for r in rows]
     cests = [r[4] for r in rows]
-    print(f"\n  C_m    across d: mean {np.nanmean(cms):.3f}  "
-          f"CoV {bl.cov(cms):.3f}  "
-          f"{'STABLE -> freezing at d=30 is justified' if bl.cov(cms) < 0.10 else 'DRIFTS -> must not freeze'}")
-    print(f"  C_bud  across d: mean {np.nanmean(cbs):.3f}  "
-          f"CoV {bl.cov(cbs):.3f}  "
-          f"{'STABLE -> freezing at d=30 is justified' if bl.cov(cbs) < 0.15 else 'DRIFTS -> must not freeze'}")
-    print(f"  Cest   across d: mean {np.nanmean(cests):.3f}  "
-          f"CoV {bl.cov(cests):.3f}  "
-          f"(shown for contrast: this is WHY Cest is measured per run, "
-          f"not frozen)")
-    print("\n  Interpretation: C_m and C_budget are normalized quantities and are")
-    print("  d-stable, so a single frozen value transfers; Cest is the raw")
-    print("  inverse-Gram row-sum and rises with d, so it is re-measured per run.")
+    def _mean_cov(xs):
+        a = np.array(xs, dtype=float)
+        return float(a.mean()), float(a.std(ddof=1) / abs(a.mean()))
+    cm_mu, cm_cov = _mean_cov(cms)
+    cb_mu, cb_cov = _mean_cov(cbs)
+    ce_mu, ce_cov = _mean_cov(cests)
+    print("  " + "-" * 46)
+    print(f"  {'MEAN':>4} {'':>5} {cm_mu:>13.3f} {cb_mu:>10.3f} {ce_mu:>9.3f}"
+          f"   <- frozen = mean over d")
+    print(f"  cross-d CoV: C_m {cm_cov:.3f}  C_bud {cb_cov:.3f}  "
+          f"C_est {ce_cov:.3f}")
+    print(f"\n  FROZEN VALUES (mean over d, carried into CONSTANTS):")
+    print(f"    C_M     = {cm_mu:.3f}  (cross-d CoV {cm_cov:.3f} "
+          f"{'STABLE' if cm_cov < 0.10 else 'DRIFTS'})")
+    print(f"    C_BUDGET= {cb_mu:.3f}  (cross-d CoV {cb_cov:.3f} "
+          f"{'STABLE' if cb_cov < 0.15 else 'DRIFTS'})")
+    print(f"    C_est is NOT frozen: cross-d CoV {ce_cov:.3f} "
+          f"(rises {cests[0]:.2f} -> {cests[-1]:.2f}); measured per run.")
+    print("\n  We freeze the MEAN over d, not any single d's value: it would be")
+    print("  inconsistent to claim d-stability and then cherry-pick one d. The")
+    print("  low cross-d CoV is what licenses a single frozen scalar for C_m,")
+    print("  C_budget; the high CoV for C_est is why it is re-measured per run.")
     return rows
 
 

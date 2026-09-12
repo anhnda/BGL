@@ -85,25 +85,21 @@ class Constants:
     because the bound is an upper bound under finite N, query noise, and
     mismatch -- this gap is not an anomaly and is stated once, here.
 
-    R1.3 / R1.5 -- NORMALIZER PROVENANCE (why C_M = 0.833, not 1.24). The referee
-    noted that the pre-revision C_M was calibrated against sqrt(m log pK / N)
-    while the downstream floor carried a different factor, so consistency could
-    not be read off. We resolve this by making ONE log factor canonical
-    everywhere: Lemma 1's normalizer, the floor, and the C_M calibration all use
-    log_pk_over_delta = log(DELTA_SPLIT * pK / delta) with delta = 1/pK (R1.2).
-    Two effects move the constant, both benign:
-      (i)  the larger normalizer rescales the ratio down (this alone would give
-           ~0.814, whose product C_M*sqrt(normalizer) matches the old 1.24 to
-           0.01% -- a pure re-expression of the SAME bound);
-      (ii) C_M is an ASYMPTOTIC sqrt-regime quantity, so it is frozen from the
-           large-N rows (N >= 2000) rather than the all-N mean. This lifts it to
-           0.833. The ~2.4% difference from (i) is exactly the R1.5 sub-exp
-           inflation that contaminates small-N rows and that the large-N freeze
-           removes by construction (quantified per cell in Tier 1's `subexp`
-           column). C_M = 0.833 is therefore the leakage constant in the clean
-           sqrt regime, consistent with the floor's normalizer.
-    C_BUDGET is back-solved (Tier 1 backward) against the same factor, giving
-    1.535 (was 1.81).
+    R1.3 / R1.5 -- NORMALIZER PROVENANCE and R1.4 d-AVERAGING (why C_M = 0.830).
+    The referee noted the pre-revision C_M was calibrated against a different log
+    factor than the floor carried, so consistency could not be read off. We make
+    ONE log factor canonical everywhere: Lemma 1's normalizer, the floor, and the
+    C_M calibration all use log_pk_over_delta = log(DELTA_SPLIT * pK / delta) with
+    delta = 1/pK (R1.2). Within a fixed d, C_M is an ASYMPTOTIC sqrt-regime
+    quantity, so it is frozen from the large-N rows (N >= 2000) where the R1.5
+    sub-exponential term is dominated (quantified per cell in Tier 1's `subexp`
+    column). CRUCIALLY, the frozen value is the MEAN of these large-N estimates
+    OVER d in {15,24,30,49} (0.820, 0.794, 0.833, 0.871) = 0.830, NOT the single
+    d=30 value 0.833: it would be inconsistent to argue C_M is d-stable and then
+    freeze one d's number. The cross-d CoV is 0.039, which is what licenses a
+    single frozen scalar. C_BUDGET is the analogous d-mean of the back-solved
+    budget constant (1.604, 1.561, 1.535, 1.510) = 1.552, cross-d CoV 0.026.
+    (See sweep_d_stability in tier1_synthetic.py for the per-d table.)
 
     R1.4 -- Cest IS NO LONGER A FROZEN CONSTANT (Path A). The Tier-1b transfer
     study shows the forward floor constant Cest = max{gamma^{-1/2},
@@ -119,8 +115,11 @@ class Constants:
     which needs no transfer claim because nothing is transferred.
     """
     C_FLOOR: float = 1.0       # orthonormal IDEAL / fallback only -- see R1.4 note
-    C_M: float = 0.833         # leakage constant (Lemma 1); see R1.3/R1.5 note
-    C_BUDGET: float = 1.535    # budget-rule constant, back-solved at Tier 1 (R1.2)
+    C_M: float = 0.830         # leakage constant: MEAN over d in {15,24,30,49}
+                               # (0.820,0.794,0.833,0.871); cross-d CoV 0.039.
+                               # NOT the single-d=30 value -- see sweep_d_stability.
+    C_BUDGET: float = 1.552    # budget constant: MEAN over the same d grid
+                               # (1.604,1.561,1.535,1.510); cross-d CoV 0.026.
     P_KEEP: float = 0.5        # centered +-1 Walsh design the floor assumes
     Z_ALPHA: float = 1.96      # single pre-registered coord (two-sided 95%)
     # R1.2: number of 1 - delta events the union bound splits delta over.
