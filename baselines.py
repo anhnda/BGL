@@ -242,8 +242,9 @@ def report(rows, setting, N, B):
     sigma_obs_mean = float(np.mean([r["sigma_obs"] for r in rows]))
 
     print(f"  coords (total over items)     : {p_tot}")
+    _det = sigma_obs_mean < 1e-6
     print(f"  mean sigma_obs over items     : {sigma_obs_mean:.4f}"
-          f"  ({'deterministic backbone' if sigma_obs_mean < 1e-6 else 'probabilistic backbone'})")
+          f"  ({'sigma_obs~0 -> floor is mismatch-driven (sigma_eff = C_m sqrt(m))' if _det else 'sigma_obs>0 -> query noise enters sigma_eff'})")
     print(f"  floor vs bootstrap agreement  : {agree_pct:.1f}%")
     print(f"  floor certified  (mean/item)  : {floor_mean:.1f}")
     print(f"  bootstrap cert.  (mean/item)  : {boot_mean:.1f}")

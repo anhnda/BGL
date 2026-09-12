@@ -330,3 +330,9 @@ TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
   resnet50/mean & 50 & 0.0000 & 0.0000 & 0.0200 & 1.000 & 0.864 \\
   \bottomrule
   \end{tabular}
+
+
+
+
+
+
