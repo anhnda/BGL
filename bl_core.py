@@ -614,57 +614,62 @@ class PowerMiss:
     """R1.9 -- enumeration POWER against the exact projection.
 
     A certificate that resolves almost nothing is trivially free of false signs,
-    so zero-false-sign is only meaningful alongside how much the run actually
-    RECOVERS of what is truly resolvable. Ground truth is the exact-cube beta.
+    so zero-false-sign is only meaningful alongside how much the run RECOVERS of
+    what is truly resolvable. Ground truth is the exact-cube beta. We report TWO
+    distinct quantities that are easy to conflate but mean different things.
 
-    Two ground-truth strata (both defined by the EXACT fit, so they are the
-    honest denominators the referee asked for):
-      resolvable       : |beta_exact| > fl_exact
-                         (coords the exact projection itself certifies at this
-                          reference/budget floor -- the natural "true positives"
-                          the run is trying to recover).
-      detectable       : |beta_exact| > 2 * fl_exact
-                         (the Theorem-1 margin: every such coord MUST clear the
-                          run floor under the guarantee, so a miss here is a
-                          genuine power failure, not a borderline near-floor case).
+    (1) GUARANTEE check -- the Theorem-1 factor-two margin. The margin is stated
+        at the RUN's own floor: |beta| > 2*fl_run  =>  the run must certify with
+        the right sign. So the honest guarantee denominator is coords with
+        |beta_exact| > 2*fl_run, and a miss there is a genuine guarantee gap.
+        (Using the exact-cube floor here would be WRONG: fl_exact << fl_run at a
+        deployment budget, so a coord can exceed 2*fl_exact yet sit below fl_run,
+        which Theorem 1 never promised the run would resolve.)
+          n_margin        : # coords with |beta_exact| > 2*fl_run
+          n_margin_recovered / n_margin_miss : recovered / missed of those
+          -> n_margin_miss MUST be 0 for the guarantee to hold.
 
-    For each stratum:
-      n_truth          : size of the stratum
-      n_recovered      : how many the RUN also certifies (|beta_run| > fl_run)
-      n_miss           : n_truth - n_recovered   (the false negatives)
-      power            : n_recovered / n_truth
+    (2) RESOLUTION recovery -- the honest finite-budget resolution cost. The full
+        cube (huge N) resolves more than a deployment-budget run; the gap is not
+        an error but exactly the "below-floor = unresolved, not zero" message.
+          n_cube_resolvable : # coords the EXACT fit certifies (|beta_exact|>fl_exact)
+          n_cube_recovered / n_cube_miss : how many the run also / does not certify
+          -> n_cube_miss > 0 is EXPECTED (the run's floor is coarser); this is a
+             resolution statement, NOT a guarantee violation.
     """
-    n_resolvable: int
-    n_resolvable_recovered: int
-    n_resolvable_miss: int
-    n_detectable: int
-    n_detectable_recovered: int
-    n_detectable_miss: int
+    n_margin: int
+    n_margin_recovered: int
+    n_margin_miss: int
+    n_cube_resolvable: int
+    n_cube_recovered: int
+    n_cube_miss: int
 
 
 def power_miss_stats(beta_run: np.ndarray, beta_exact: np.ndarray,
                      fl_run: float, fl_exact: float) -> PowerMiss:
-    """R1.9 -- count how many truly-resolvable / truly-detectable coords (by the
-    EXACT projection) the run FAILED to certify (misses / false negatives).
+    """R1.9 -- power against the exact projection, split into the Theorem-1
+    GUARANTEE check (threshold at the run's own floor, must have zero misses) and
+    the RESOLUTION recovery (what the full cube resolves that the smaller-budget
+    run does not -- an expected finite-budget cost, not a violation).
 
-    detectable (|beta_exact| > 2 fl_exact) is the stratum Theorem 1's factor-two
-    margin promises the run must catch; a miss there is the meaningful power
-    failure. resolvable (> fl_exact) is the looser stratum (borderline coords the
-    exact fit just barely certifies). Reporting both makes the enumeration result
-    a POWER statement, not only a zero-false-sign statement.
+    See PowerMiss for why the guarantee threshold is 2*fl_run and NOT 2*fl_exact:
+    the factor-two margin of Theorem 1 is relative to the floor at the budget the
+    run was actually executed at.
     """
     run_cert = np.abs(beta_run) > fl_run
-    resolvable = np.abs(beta_exact) > fl_exact
-    detectable = np.abs(beta_exact) > 2.0 * fl_exact
-    res_rec = int((resolvable & run_cert).sum())
-    det_rec = int((detectable & run_cert).sum())
-    n_res = int(resolvable.sum())
-    n_det = int(detectable.sum())
+    # (1) Theorem-1 guarantee stratum: margin at the RUN floor.
+    margin = np.abs(beta_exact) > 2.0 * fl_run
+    margin_rec = int((margin & run_cert).sum())
+    n_margin = int(margin.sum())
+    # (2) Resolution recovery relative to the full-cube floor.
+    cube_res = np.abs(beta_exact) > fl_exact
+    cube_rec = int((cube_res & run_cert).sum())
+    n_cube = int(cube_res.sum())
     return PowerMiss(
-        n_resolvable=n_res, n_resolvable_recovered=res_rec,
-        n_resolvable_miss=n_res - res_rec,
-        n_detectable=n_det, n_detectable_recovered=det_rec,
-        n_detectable_miss=n_det - det_rec)
+        n_margin=n_margin, n_margin_recovered=margin_rec,
+        n_margin_miss=n_margin - margin_rec,
+        n_cube_resolvable=n_cube, n_cube_recovered=cube_rec,
+        n_cube_miss=n_cube - cube_rec)
 
 
 # =========================================================================== #

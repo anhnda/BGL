@@ -369,3 +369,36 @@ FLOOR vs BOOTSTRAP vs WALD  (NLP K=1, shared bank N=2000, B=200)
     FAIR-WALD-ONLY (fair-Wald yes, floor no, mean/item): 5.60
     FLOOR-ONLY vs fair-Wald (floor yes, fW no, mean/item): 0.00
     -> the fair Wald does NOT degenerate as sigma_obs->0 (its SE sees the
+
+
+
+
+  
+
+
+  python tier2_blackbox.py exact-nlp --K 2 --subset 10 --max_d 13 \
+    --sentences text_samples/sst2_short.txt
+  enumerating full cube when d<=13 (<= 8192 calls/probe); larger d are SKIPPED (no exact beta -- no random-bank stand-in).                                                                                         
+exact-nlp K=2:  32%|███████████████████████████████████████▉                                                                                    | 29/90 [00:03<00:02, 22.23item/s, distilbert/zero d=15 > 13: SKIP]
+Some weights of the model checkpoint at textattack/roberta-base-SST-2 were not used when initializing RobertaForSequenceClassification: ['roberta.pooler.dense.bias', 'roberta.pooler.dense.weight']
+- This IS expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+exact-nlp K=2: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 90/90 [00:21<00:00,  4.14item/s, visobert/zero d=22 > 13: SKIP]
+
+========================================================================
+EXACT-BETA sign-correctness (NLP K=2)
+========================================================================
+  enumerable probes: 21  (d in [7, 13], exact cube 2^d); 69 probes skipped (d > 13)
+  certified coords : 110
+  false signs      : 0
+  false-sign rate  : 0.0000   (Theorem 1 forward claim, exact ground truth; target 0)
+
+  [R1.9 POWER -- how much of the truly-resolvable structure the run recovers]
+    a zero false-sign rate is only meaningful with the miss rate: a certificate
+    that resolves little is trivially correct. Ground truth = exact-cube beta.
+    resolvable (|beta_exact| > fl_exact)      :  336  recovered  110  MISS  226  power 0.327
+    detectable (|beta_exact| > 2*fl_exact)    :  189  recovered   55  MISS  134  power 0.291
+    -> Theorem 1's factor-two margin promises every DETECTABLE coord clears the
+       run floor; detectable-power < 1 would flag a guarantee gap, power = 1 with
+       zero false signs is the strong reading. Resolvable-power is the looser
+       near-floor stratum and is expected to be lower (borderline coords).

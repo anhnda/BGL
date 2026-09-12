@@ -298,12 +298,12 @@ def exact_sign_check(probe: Probe, beta_min, K, seed=0):
     pm = bl.power_miss_stats(beta_run, beta_exact, fl_run, fl_exact)   # R1.9
     return dict(d=probe.d, N_run=N_run, cube_N=Nc, n_calls=Nc,
                 n_false_sign=n_false, n_scored=n_scored,
-                n_resolvable=pm.n_resolvable,
-                n_resolvable_recovered=pm.n_resolvable_recovered,
-                n_resolvable_miss=pm.n_resolvable_miss,
-                n_detectable=pm.n_detectable,
-                n_detectable_recovered=pm.n_detectable_recovered,
-                n_detectable_miss=pm.n_detectable_miss)
+                n_margin=pm.n_margin,
+                n_margin_recovered=pm.n_margin_recovered,
+                n_margin_miss=pm.n_margin_miss,
+                n_cube_resolvable=pm.n_cube_resolvable,
+                n_cube_recovered=pm.n_cube_recovered,
+                n_cube_miss=pm.n_cube_miss)
 
 
 # =========================================================================== #
@@ -396,29 +396,37 @@ def report_exact(rows, setting, skipped):
     print(f"  false-sign rate  : {rate:.4f}   "
           f"(Theorem 1 forward claim, exact ground truth; target 0)")
 
-    # R1.9 -- POWER against the exact projection (miss / false-negative rate).
-    n_res = sum(r.get("n_resolvable", 0) for r in rows)
-    res_rec = sum(r.get("n_resolvable_recovered", 0) for r in rows)
-    res_miss = sum(r.get("n_resolvable_miss", 0) for r in rows)
-    n_det = sum(r.get("n_detectable", 0) for r in rows)
-    det_rec = sum(r.get("n_detectable_recovered", 0) for r in rows)
-    det_miss = sum(r.get("n_detectable_miss", 0) for r in rows)
-    res_pow = (res_rec / n_res) if n_res else float("nan")
-    det_pow = (det_rec / n_det) if n_det else float("nan")
-    print("\n  [R1.9 POWER -- how much of the truly-resolvable structure the run "
-          "recovers]")
-    print(f"    a zero false-sign rate is only meaningful with the miss rate: a "
-          f"certificate\n    that resolves little is trivially correct. Ground "
-          f"truth = exact-cube beta.")
-    print(f"    resolvable (|beta_exact| > fl_exact)      : {n_res:>4d}  "
-          f"recovered {res_rec:>4d}  MISS {res_miss:>4d}  power {res_pow:.3f}")
-    print(f"    detectable (|beta_exact| > 2*fl_exact)    : {n_det:>4d}  "
-          f"recovered {det_rec:>4d}  MISS {det_miss:>4d}  power {det_pow:.3f}")
-    print(f"    -> Theorem 1's factor-two margin promises every DETECTABLE coord "
-          f"clears the\n       run floor; detectable-power < 1 would flag a "
-          f"guarantee gap, power = 1 with\n       zero false signs is the strong "
-          f"reading. Resolvable-power is the looser\n       near-floor stratum "
-          f"and is expected to be lower (borderline coords).")
+    # R1.9 -- POWER against the exact projection, split into the guarantee check
+    # (Theorem-1 margin at the RUN floor, must have zero misses) and the
+    # resolution recovery (what the full cube resolves that the run does not --
+    # an expected finite-budget cost, not a violation).
+    n_mar = sum(r.get("n_margin", 0) for r in rows)
+    mar_rec = sum(r.get("n_margin_recovered", 0) for r in rows)
+    mar_miss = sum(r.get("n_margin_miss", 0) for r in rows)
+    n_cube = sum(r.get("n_cube_resolvable", 0) for r in rows)
+    cube_rec = sum(r.get("n_cube_recovered", 0) for r in rows)
+    cube_miss = sum(r.get("n_cube_miss", 0) for r in rows)
+    mar_pow = (mar_rec / n_mar) if n_mar else float("nan")
+    cube_pow = (cube_rec / n_cube) if n_cube else float("nan")
+    print("\n  [R1.9 POWER -- zero false signs is only meaningful with the miss "
+          "rate]")
+    print(f"  (1) GUARANTEE (Theorem-1 margin at the RUN floor: "
+          f"|beta_exact| > 2*fl_run):")
+    print(f"      truth {n_mar:>4d}   recovered {mar_rec:>4d}   "
+          f"MISS {mar_miss:>4d}   power {mar_pow:.3f}")
+    print(f"      -> this is the guarantee denominator; MISS MUST be 0 "
+          f"(the margin promises\n         every such coord clears the run "
+          f"floor). MISS=0 with zero false signs\n         is the theorem "
+          f"holding on exact ground truth.")
+    print(f"  (2) RESOLUTION recovery (vs the full-cube floor: "
+          f"|beta_exact| > fl_exact):")
+    print(f"      cube-resolvable {n_cube:>4d}   run-recovered {cube_rec:>4d}   "
+          f"unresolved {cube_miss:>4d}   power {cube_pow:.3f}")
+    print(f"      -> the full cube (huge N) resolves more than a deployment "
+          f"budget; the gap\n         is the honest finite-budget resolution "
+          f"cost ('below-floor = unresolved,\n         not zero'), NOT a "
+          f"guarantee violation. A low number here means the run\n         "
+          f"budget was small relative to what the reference could support.")
 
 
 # =========================================================================== #
