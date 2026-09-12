@@ -261,7 +261,18 @@ def run_image(args):
     rfs = (list(M.IMAGE_REFERENCES) if args.references == "all"
            else args.references.split(","))
     rows = []
-    prog = Progress(len(bks) * len(rfs) * max(len(paths), 1),
+    n_items = len(bks) * len(rfs) * len(paths)
+    if n_items == 0:
+        print(f"  [tier2b-image] glob '{os.path.join(args.images_dir, args.glob)}'"
+              f" matched {len(paths)} files -> nothing to run.")
+    else:
+        # Each item = R independent audits at N, so a heavy R is SLOW (e.g. R=40,
+        # N=2000, ResNet-50 ~ 2 min/image). The bar advances once PER IMAGE, so a
+        # long pause before the first tick is expected, not a hang.
+        print(f"  [tier2b-image] {len(paths)} images x {len(bks)}x{len(rfs)} cells,"
+              f" R={args.R} seeds each (~expect minutes per image at large R).",
+              flush=True)
+    prog = Progress(max(n_items, 1),
                     f"tier2b-image N={args.N} R={args.R}")
     for bk in bks:
         try:
