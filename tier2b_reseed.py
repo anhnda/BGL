@@ -148,7 +148,14 @@ def report_reseed(rows, N, R, K, pilot="plain"):
     print(f"           pilot: {_plabel}")
     print("=" * 72)
     if not rows:
-        print("  no well-posed probes (every probe had N <= pK at this budget).")
+        print("  No cell produced a result. Likely causes, in order:")
+        print("   (1) no input files matched (--images_dir/--glob or --sentences"
+              " empty/mismatched path);")
+        print("   (2) every probe's d put N <= pK at this budget (raise --N or"
+              " lower d);")
+        print("   (3) an ill-conditioned design at every seed (no certificate).")
+        print("  Check the per-item progress log above: '(skipped)' => (1),"
+              " '(not identifiable)' => (2)/(3).")
         return
     print(f"  {'cell':>20} {'pK':>4} | {'viol/cert':>12} {'rate':>7} "
           f"{'1/pK':>7} | {'run_fail/runs':>14} {'rate':>7} | "
