@@ -1,55 +1,21 @@
 """
 tier2b_reseed.py
 ================
-TIER 2b -- INDEPENDENT-RESEEDING AUDIT.
+Independent-reseeding STABILITY audit.
 
-Question answered: does the PROBABILITY statement of Theorem 1 hold across
-INDEPENDENT mask draws? The nested prefix ladder of Tier 2 (tier2_blackbox.py)
-reuses ONE mask bank, so its sign-stability is partly built in by Corollary 2 and
-cannot test the "with probability >= 1 - delta" clause. Here we fix ONE budget N
-and run R INDEPENDENT seeds per probe, then measure the two things the nested
-ladder cannot.
+The reference sign is the cross-seed majority, so these rates measure stability,
+not correctness.  The exact-beta enumeration tier is the direct correctness
+check.
 
-WHAT IS MEASURED (all numerics via bl_core.reseed_audit):
+Two pilot modes are supported:
+  * plain: cross-fitted planning point estimate; empirical stability diagnostic.
+  * ucb: one-sided held-out mismatch-energy UCB.  The UCB is plugged directly
+    into the two-term certified floor with split=4.  A valid B_pop bound is still
+    required separately; for probability-output NLP probes it is derived from
+    |g|<=1 via the generic Parseval bound.
 
-  (A) PER-COORDINATE cross-seed sign-disagreement rate among certified
-      coordinates. Target <= 1/pK at delta = 1/pK. This is the quantity the
-      pre-revision paper reported (Table 4 "viol./cert").
-
-  (R1.7) PER-RUN, SIMULTANEOUS failure rate -- the fraction of independent draws
-      in which ANY certified coordinate disagrees with the cross-seed reference
-      sign. Theorem 1's failure event is per-run and simultaneous: on that event
-      arbitrarily many coordinates may be wrong at once, so the faithful test of
-      "with probability 1 - delta" is this item-level (any-coordinate) rate, not
-      the per-coordinate rate (A). Target <= delta = 1/pK. Reported ALONGSIDE (A)
-      so the two are never conflated -- exactly the referee's R1.7 point.
-
-  (B) BAND-STRATIFIED Jaccard stability of the certified set across seeds, split
-      by whether a coordinate's cross-seed median magnitude is ABOVE 2*floor or
-      INSIDE the unresolved band [floor, 2*floor]. Definition 1 predicts set
-      churn is confined to the band; above-band membership should be near-perfect.
-
-STABILITY vs CORRECTNESS (R1.8). Cross-seed agreement is STABILITY, not
-CORRECTNESS: two seeds can agree and both be wrong. The reference sign here is
-the cross-seed MAJORITY, a proxy for sgn(beta_S), not ground truth. Only the
-enumeration tier (exact beta, tier2_blackbox exact-nlp) tests correctness. This
-driver labels its numbers as stability throughout.
-
-R1.4 (Path A): every per-seed certified decision uses the realized floor
-(bl.floor_from_design), Cest measured from that seed's own design -- no frozen
-constant, no transfer claim.
-
-USAGE
-  # NLP, weakest-signal cell (the ViSoBERT/zero stress case):
-  python tier2b_reseed.py nlp --backbones visobert --references zero \
-      --N 2000 --R 40 --K 1 --subset 10 --sentences sst2_samples.txt
-
-  # Image, strongest-signal cell (deterministic backbone):
-  python tier2b_reseed.py image --backbones resnet50 --references mean \
-      --N 2000 --R 40 --subset 10 --images_dir benchmark_50 --glob "*.JPEG"
-
-  # Pure-numpy pipeline self-test (no models, no downloads):
-  python tier2b_reseed.py selftest
+Every well-posed seed is included in the item-level disagreement denominator,
+including seeds whose certified set is empty.
 """
 from __future__ import annotations
 import argparse
@@ -63,37 +29,62 @@ import bl_core as bl
 # Reuse the Tier-2 probe adapters / pilot / progress so both tiers share ONE
 # definition of a probe and of the pilot sigma_eff (no divergence between tiers).
 from tier2_blackbox import (
-    Progress, Probe, nlp_probe, image_probe, pilot_sigma_eff, load_sentences,
+    Progress, Probe, nlp_probe, image_probe, pilot_sigma_eff,
+    pilot_mismatch_ucb, probe_B_pop_bound, load_sentences,
 )
 
 
 # =========================================================================== #
 #  Per-probe audit
 # =========================================================================== #
-def audit_probe(probe: Probe, N, R, K, seed0=0, ucb=False):
-    """Pilot sigma_eff ONCE (as deployed), then run the independent-reseeding
-    audit at fixed N over R seeds. Returns a bl.ReseedResult or None if the
-    probe is not identifiable at this (N, K).
+def audit_probe(probe: Probe, N, R, K, seed0=0, ucb=False,
+                B_pop_ub=None):
+    """Run one fixed-budget independent-reseeding audit.
 
-    R2.1: ucb=True uses the empirical-Bernstein UPPER-CONFIDENCE sigma_eff
-    (unconditional guarantee), and the floor then budgets the pilot event as the
-    fourth union-bound term (split=4). ucb=False is the plain conditional pilot
-    (split=3, the default)."""
+    ``ucb=True`` uses the direct mismatch-energy UCB and split=4.  It requires a
+    genuine population residual sup bound.  If ``B_pop_ub`` is not supplied, a
+    bound is derived automatically only when the probe has a known bounded output
+    (e.g. NLP class probabilities in [0,1]).
+
+    ``ucb=False`` preserves the historical plug-in row for stability diagnostics:
+    the cross-fitted m_hat and sample residual max are used as empirical floor
+    ingredients, and the output must not be described as theorem-level coverage.
+    """
     if N <= bl.p_K(probe.d, K):
         return None
-    # Pilot once (as deployed); grab the mismatch breakdown so the per-seed floor
-    # is the honest TWO-TERM certified floor (report point 1/2). detail=True gives
-    # the MismatchEstimate (plain) or SigmaEffUCB (ucb).
-    s_eff, est = pilot_sigma_eff(probe, K, seed=seed0, ucb=ucb, detail=True)
+
     if ucb:
-        m_for_floor, B_for_floor = est.m_ucb, getattr(probe, "B_known", None)
+        s_eff_plan, u = pilot_mismatch_ucb(probe, K, seed=seed0)
+        m_for_floor = u.m_ucb
+        B_for_floor = B_pop_ub
+        if B_for_floor is None:
+            B_for_floor = probe_B_pop_bound(probe, K)
+        if B_for_floor is None:
+            raise ValueError(
+                "UCB certification needs a valid B_pop upper bound. "
+                "Probability-output NLP probes derive one automatically; "
+                "for logit probes pass B_pop_ub explicitly."
+            )
+        split = bl.CONSTANTS.DELTA_SPLIT_UCB
     else:
-        m_for_floor, B_for_floor = est.m_hat, est.B_hat
-    split = 4 if ucb else None
+        s_eff_plan, est = pilot_sigma_eff(probe, K, seed=seed0, detail=True)
+        m_for_floor = est.m_hat
+        # Historical empirical plug-in only: sample max is not a theorem B_pop UB.
+        B_for_floor = est.B_hat if B_pop_ub is None else B_pop_ub
+        split = bl.CONSTANTS.DELTA_SPLIT
+
     res = bl.reseed_audit(
-        query_fn=probe.query, d=probe.d, sigma_obs=probe.sigma_obs,
-        N=N, R=R, K=K, s_eff=s_eff, seed0=seed0 + 1000, split=split,
-        m_hat=m_for_floor, B=B_for_floor)
+        query_fn=probe.query,
+        d=probe.d,
+        N=N,
+        R=R,
+        K=K,
+        sigma_obs_ub=probe.sigma_obs,
+        m_bound=m_for_floor,
+        B_pop_bound=B_for_floor,
+        seed0=seed0 + 1000,
+        split=split,
+    )
     return res if (res is not None and res.well_posed) else None
 
 
@@ -101,29 +92,28 @@ def audit_probe(probe: Probe, N, R, K, seed0=0, ucb=False):
 #  Aggregation across probes within a cell
 # =========================================================================== #
 def _pool_cell(cell, results):
-    """Pool per-probe ReseedResults into one cell row.
-
-    Per-coordinate and per-run rates are POOLED over the numerators/denominators
-    of every probe in the cell (so a cell rate is the honest fraction, not a mean
-    of fractions). Jaccard and band counts are averaged over well-posed probes.
-    """
+    """Pool counts over probes; Jaccards/band sizes are averaged over probes."""
     n_cc = sum(r.n_cert_checks for r in results)
     n_vi = sum(r.n_viol for r in results)
     n_ru = sum(r.n_runs for r in results)
-    n_rf = sum(r.n_run_fail for r in results)
+    n_rd = sum(r.n_run_disagree for r in results)
     pk = int(np.median([r.pK for r in results]))
+
     def _mn(xs):
         xs = [x for x in xs if x is not None and not math.isnan(x)]
         return float(np.mean(xs)) if xs else float("nan")
+
     return {
         "cell": cell,
         "pK": pk,
-        "target": 1.0 / pk,
+        "reference": 1.0 / pk,
         "n_probes": len(results),
-        "viol": n_vi, "cert": n_cc,
+        "viol": n_vi,
+        "cert": n_cc,
         "viol_rate": (n_vi / n_cc) if n_cc else float("nan"),
-        "run_fail": n_rf, "runs": n_ru,
-        "run_fail_rate": (n_rf / n_ru) if n_ru else float("nan"),
+        "run_disagree": n_rd,
+        "runs": n_ru,
+        "run_disagree_rate": (n_rd / n_ru) if n_ru else float("nan"),
         "jac_above": _mn([r.jaccard_above for r in results]),
         "jac_band": _mn([r.jaccard_band for r in results]),
         "n_above": _mn([r.n_above for r in results]),
@@ -131,82 +121,84 @@ def _pool_cell(cell, results):
     }
 
 
+def _fmt(x, nd=3):
+    return "NA" if x is None or (isinstance(x, float) and math.isnan(x)) else f"{x:.{nd}f}"
+
+
 # =========================================================================== #
 #  Reporting
 # =========================================================================== #
 def report_reseed(rows, N, R, K, pilot="plain"):
-    print("\n" + "=" * 72)
-    _plabel = ("UCB upper-confidence sigma_eff (R2.1): discharges Theorem 1's "
-               "pilot\n                  conditioning hypothesis w.h.p. (split=4). "
-               "Does NOT by itself force\n                  the per-run rate below "
-               "1/pK -- a near-degenerate cell can remain in\n                  the "
-               "residual conditional regime the paper flags as a limitation."
-               if pilot == "ucb"
-               else "plain point-estimate sigma_eff -- conditional (split=3)")
-    print(f"TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N={N}, R={R} seeds, "
-          f"K={K})")
-    print(f"           pilot: {_plabel}")
-    print("=" * 72)
+    print("\n" + "=" * 78)
+    if pilot == "ucb":
+        plabel = (
+            "held-out mismatch-energy UCB (split=4); m_UCB is plugged directly "
+            "into the two-term floor"
+        )
+    else:
+        plabel = (
+            "cross-fitted plug-in planning pilot (split=3); stability diagnostic, "
+            "not a theorem-level coverage test"
+        )
+    print(f"TIER 2b -- INDEPENDENT-RESEEDING STABILITY AUDIT "
+          f"(N={N}, R={R}, K={K})")
+    print(f"pilot: {plabel}")
+    print("=" * 78)
+
     if not rows:
-        print("  No cell produced a result. Likely causes, in order:")
-        print("   (1) no input files matched (--images_dir/--glob or --sentences"
-              " empty/mismatched path);")
-        print("   (2) every probe's d put N <= pK at this budget (raise --N or"
-              " lower d);")
-        print("   (3) an ill-conditioned design at every seed (no certificate).")
-        print("  Check the per-item progress log above: '(skipped)' => (1),"
-              " '(not identifiable)' => (2)/(3).")
+        print("No cell produced a result.")
         return
-    print(f"  {'cell':>20} {'pK':>4} | {'viol/cert':>12} {'rate':>7} "
-          f"{'1/pK':>7} | {'run_fail/runs':>14} {'rate':>7} | "
+
+    print(f"  {'cell':>20} {'pK':>4} | {'dis/cert':>12} {'rate':>7} "
+          f"{'1/pK ref':>8} | {'run_dis/runs':>14} {'rate':>7} | "
           f"{'J>2fl':>6} {'J[fl,2fl]':>9} {'#>2fl/#band':>12}")
     for r in rows:
         vc = f"{r['viol']}/{r['cert']}"
-        rf = f"{r['run_fail']}/{r['runs']}"
+        rd = f"{r['run_disagree']}/{r['runs']}"
         print(f"  {r['cell']:>20} {r['pK']:>4} | "
-              f"{vc:>12} {r['viol_rate']:>7.4f} {r['target']:>7.4f} | "
-              f"{rf:>14} {r['run_fail_rate']:>7.4f} | "
-              f"{r['jac_above']:>6.3f} {r['jac_band']:>9.3f} "
-              f"{r['n_above']:>5.1f}/{r['n_band']:<5.1f}")
+              f"{vc:>12} {_fmt(r['viol_rate'],4):>7} "
+              f"{r['reference']:>8.4f} | "
+              f"{rd:>14} {_fmt(r['run_disagree_rate'],4):>7} | "
+              f"{_fmt(r['jac_above']):>6} {_fmt(r['jac_band']):>9} "
+              f"{_fmt(r['n_above'],1):>5}/{_fmt(r['n_band'],1):<5}")
 
-    # Guarantee-level summary (pooled across every cell).
     tot_vi = sum(r["viol"] for r in rows)
     tot_cc = sum(r["cert"] for r in rows)
-    tot_rf = sum(r["run_fail"] for r in rows)
+    tot_rd = sum(r["run_disagree"] for r in rows)
     tot_ru = sum(r["runs"] for r in rows)
-    tgt = float(np.median([r["target"] for r in rows]))
+    ref = float(np.median([r["reference"] for r in rows]))
     pc_rate = (tot_vi / tot_cc) if tot_cc else float("nan")
-    rn_rate = (tot_rf / tot_ru) if tot_ru else float("nan")
-    print("\n  (A) PER-COORDINATE cross-seed sign-disagreement (stability, "
-          "not correctness):")
-    print(f"      {tot_vi}/{tot_cc} = {pc_rate:.4f}   target <= 1/pK "
-          f"(~{tgt:.4f})   [{'OK' if pc_rate <= tgt else 'ABOVE TARGET'}]")
-    print("  (R1.7) PER-RUN simultaneous failure (ANY certified coord "
-          "disagrees) -- the faithful test of Theorem 1's 1-delta clause:")
-    print(f"      {tot_rf}/{tot_ru} = {rn_rate:.4f}   target <= delta = 1/pK "
-          f"(~{tgt:.4f})   [{'OK' if rn_rate <= tgt else 'ABOVE TARGET'}]")
-    ja = float(np.nanmean([r["jac_above"] for r in rows]))
-    jb = float(np.nanmean([r["jac_band"] for r in rows]))
-    print("  (B) set churn is confined to the unresolved band (Definition 1):")
-    print(f"      mean Jaccard above 2*floor = {ja:.3f}  (near 1 = stable); "
-          f"in band [floor,2floor] = {jb:.3f}  (lower = churn, as predicted)")
-    print("\n  NOTE: cross-seed agreement is STABILITY, not correctness -- two "
-          "seeds\n        can agree and both be wrong. Only the enumeration tier "
-          "(exact\n        beta) tests correctness.")
+    rd_rate = (tot_rd / tot_ru) if tot_ru else float("nan")
+
+    print("\n  Cross-seed sign disagreement (STABILITY, not correctness):")
+    print(f"    per-coordinate: {tot_vi}/{tot_cc} = {_fmt(pc_rate,4)}")
+    print(f"    per-run/item  : {tot_rd}/{tot_ru} = {_fmt(rd_rate,4)}")
+    print(f"    nominal 1/pK reference scale: ~{ref:.4f} "
+          "(shown for context, not a theorem calibration target)")
+
+    vals_a = [r["jac_above"] for r in rows if not math.isnan(r["jac_above"])]
+    vals_b = [r["jac_band"] for r in rows if not math.isnan(r["jac_band"])]
+    ja = float(np.mean(vals_a)) if vals_a else float("nan")
+    jb = float(np.mean(vals_b)) if vals_b else float("nan")
+    print("  Set stability:")
+    print(f"    Jaccard above 2*floor = {_fmt(ja)}; "
+          f"in [floor,2floor] = {_fmt(jb)}")
+    print("  NOTE: two seeds can agree and both be wrong. Exact-beta enumeration "
+          "is the correctness check.")
     _latex_table(rows, N, R, K)
 
 
 def _latex_table(rows, N, R, K):
-    print("\n  % ---- booktabs table for the appendix ----")
+    print("\n  % ---- booktabs row(s) for Table 4 ----")
     print("  \\begin{tabular}{lrrrrrr}")
     print("  \\toprule")
-    print("  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & "
+    print("  Cell & $p_K$ & per-coord & per-run & $1/p_K$ & "
           "$J_{>2\\mathrm{fl}}$ & $J_{[\\mathrm{fl},2\\mathrm{fl}]}$ \\\\")
     print("  \\midrule")
     for r in rows:
-        print(f"  {r['cell']} & {r['pK']} & {r['viol_rate']:.4f} & "
-              f"{r['run_fail_rate']:.4f} & {r['target']:.4f} & "
-              f"{r['jac_above']:.3f} & {r['jac_band']:.3f} \\\\")
+        print(f"  {r['cell']} & {r['pK']} & {_fmt(r['viol_rate'],4)} & "
+              f"{_fmt(r['run_disagree_rate'],4)} & {r['reference']:.4f} & "
+              f"{_fmt(r['jac_above'])} & {_fmt(r['jac_band'])} \\\\")
     print("  \\bottomrule")
     print("  \\end{tabular}")
 
@@ -237,12 +229,15 @@ def run_nlp(args):
                 if p is None:
                     prog.step(f"{bk}/{ref} (skipped: d out of range)")
                     continue
-                res = audit_probe(p, args.N, args.R, args.K, seed0=si, ucb=args.pilot=="ucb")
+                res = audit_probe(
+                    p, args.N, args.R, args.K, seed0=si,
+                    ucb=(args.pilot == "ucb"), B_pop_ub=args.B_pop_ub,
+                )
                 if res is not None:
                     cell_results.append(res)
                     prog.step(f"{bk}/{ref} d={p.d} "
-                              f"viol={res.n_viol}/{res.n_cert_checks} "
-                              f"runfail={res.n_run_fail}/{res.n_runs}")
+                              f"dis={res.n_viol}/{res.n_cert_checks} "
+                              f"rundis={res.n_run_disagree}/{res.n_runs}")
                 else:
                     prog.step(f"{bk}/{ref} d={p.d} (not identifiable)")
             if cell_results:
@@ -288,12 +283,19 @@ def run_image(args):
                 if p is None:
                     prog.step(f"{bk}/{ref} (skipped)")
                     continue
-                res = audit_probe(p, args.N, args.R, 1, seed0=pi, ucb=args.pilot=="ucb")
+                try:
+                    res = audit_probe(
+                        p, args.N, args.R, 1, seed0=pi,
+                        ucb=(args.pilot == "ucb"), B_pop_ub=args.B_pop_ub,
+                    )
+                except ValueError as e:
+                    prog.step(f"{bk}/{ref} d={p.d} (skipped: {e})")
+                    continue
                 if res is not None:
                     cell_results.append(res)
                     prog.step(f"{bk}/{ref} d={p.d} "
-                              f"viol={res.n_viol}/{res.n_cert_checks} "
-                              f"runfail={res.n_run_fail}/{res.n_runs}")
+                              f"dis={res.n_viol}/{res.n_cert_checks} "
+                              f"rundis={res.n_run_disagree}/{res.n_runs}")
                 else:
                     prog.step(f"{bk}/{ref} (not identifiable)")
             if cell_results:
@@ -306,25 +308,24 @@ def run_image(args):
 # =========================================================================== #
 #  Self-test: pure-numpy synthetic probe, no models, no downloads
 # =========================================================================== #
-def _make_synthetic_probe(d, n_active, m_resid, sigma_obs, seed, amp_lo=0.15,
-                          amp_hi=0.5, degenerate=False):
-    """A model-free Probe whose response is a known degree-1 Walsh signal plus a
-    controlled higher-order mismatch block plus optional query noise, exactly the
-    Tier-1 generator -- so the audit can be exercised end-to-end without torch.
+def _make_synthetic_probe(d, n_active, m_resid, sigma_obs, seed,
+                          amp_lo=0.15, amp_hi=0.5, degenerate=False):
+    """Bounded pure-numpy probe for end-to-end plain/UCB smoke tests.
 
-    amp_lo/amp_hi set the active-coefficient magnitude relative to the floor:
-    small amplitudes put coordinates in the unresolved band and produce the churn
-    Definition 1 predicts. `degenerate` shrinks the whole response toward zero
-    (the ViSoBERT/zero stress case) so the pilot can under-estimate sigma_eff and
-    the per-coordinate rate can approach 1/pK.
+    Query noise is Rademacher +/-sigma_obs, hence conditionally mean-zero,
+    sigma_obs-sub-Gaussian, and bounded.  The response therefore has a known
+    absolute bound, allowing the UCB path to exercise a genuine R_val/B_pop bound.
+    This self-test is not the Gaussian-noise Tier-1 experiment.
     """
     rng = np.random.default_rng(seed)
     beta = np.zeros(d)
     active = rng.choice(d, size=min(n_active, d), replace=False)
-    beta[active] = rng.choice([-1.0, 1.0], size=len(active)) * \
-        rng.uniform(amp_lo, amp_hi, size=len(active))
+    beta[active] = (
+        rng.choice([-1.0, 1.0], size=len(active))
+        * rng.uniform(amp_lo, amp_hi, size=len(active))
+    )
     if degenerate:
-        beta *= 0.15                       # near-constant response
+        beta *= 0.15
     trip = rng.choice(d, size=min(3, d), replace=False)
     amp = math.sqrt(max(m_resid, 0.0))
 
@@ -332,11 +333,18 @@ def _make_synthetic_probe(d, n_active, m_resid, sigma_obs, seed, amp_lo=0.15,
         Zc = 2.0 * (Z - 0.5)
         main = Zc @ beta
         hi = amp * np.prod(Zc[:, trip], axis=1) if len(trip) == 3 else 0.0
-        noise = (sigma_obs * np.random.default_rng().standard_normal(Z.shape[0])
-                 if sigma_obs > 0 else 0.0)
+        if sigma_obs > 0:
+            rr = np.random.default_rng()
+            noise = sigma_obs * rr.choice([-1.0, 1.0], size=Z.shape[0])
+        else:
+            noise = 0.0
         return main + hi + noise
 
-    return Probe(d=d, target=0, query_fn=query, sigma_obs=sigma_obs), beta
+    output_abs_bound = float(np.abs(beta).sum() + abs(amp) + abs(sigma_obs))
+    return Probe(
+        d=d, target=0, query_fn=query, sigma_obs=sigma_obs,
+        output_abs_bound=output_abs_bound,
+    ), beta
 
 
 def run_selftest(args):
@@ -363,7 +371,10 @@ def run_selftest(args):
         results = []
         for si in range(args.subset or 8):
             probe, _ = _make_synthetic_probe(seed=si, **cfg)
-            res = audit_probe(probe, args.N, args.R, 1, seed0=si, ucb=args.pilot=="ucb")
+            res = audit_probe(
+                probe, args.N, args.R, 1, seed0=si,
+                ucb=(args.pilot == "ucb"), B_pop_ub=args.B_pop_ub,
+            )
             if res is not None:
                 results.append(res)
         if results:
@@ -390,9 +401,15 @@ def build_parser():
     p.add_argument("--grid", type=int, default=7)
     p.add_argument("--subset", type=int, default=10)
     p.add_argument("--pilot", choices=["plain", "ucb"], default="plain",
-                   help="plain = conditional point-estimate pilot (split=3); "
-                        "ucb = R2.1 empirical-Bernstein upper-confidence "
-                        "sigma_eff, unconditional guarantee (split=4).")
+                   help="plain = plug-in stability diagnostic (split=3); "
+                        "ucb = held-out mismatch-energy UCB plugged directly "
+                        "into the two-term floor (split=4)")
+    p.add_argument(
+        "--B_pop_ub", type=float, default=None,
+        help="optional valid upper bound on ||r_{>K}||_inf. Probability-output "
+             "NLP probes derive one automatically; logit-image UCB mode requires "
+             "this argument."
+    )
     return p
 
 

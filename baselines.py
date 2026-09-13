@@ -52,30 +52,23 @@ from tier2_blackbox import (Probe, nlp_probe, image_probe, load_sentences,
 # =========================================================================== #
 #  The three certification criteria, on a shared fit / bank
 # =========================================================================== #
-def certify_floor(beta, s_eff, d, N, K, Z=None):
-    """Simultaneous floor rule -> boolean mask over coordinates.
+def certify_floor(beta, s_eff, d, N, K, Z=None, sigma_obs=None,
+                  m_hat=None, B=None):
+    """Simultaneous two-term floor rule on the shared realized design.
 
-    R1.4 (Path A): if the realized design Z is supplied, Cest is measured from it
-    (floor_from_design); otherwise falls back to the frozen-C_FLOOR floor_value.
-    The comparison in this file always passes Z, so the floor uses the true
-    design constant on the same bank the bootstrap and Wald rules see.
+    The baseline comparison is meaningful only when it uses the same realized
+    C_est and the same nuisance inputs as the paper's forward certificate.
+    ``s_eff`` is retained in the signature for caller compatibility but is not
+    used by the certified rule.
     """
-def certify_floor(beta, s_eff, d, N, K, Z=None, sigma_obs=None, m_hat=None,
-                  B=None):
-    """Simultaneous floor rule -> boolean mask over coordinates.
-
-    R1.4 (Path A): Cest is measured from the realized design Z.  Report point 1/2:
-    when (sigma_obs, m_hat, B) are supplied the floor is the honest TWO-TERM
-    certified floor on that design; otherwise it falls back to the legacy
-    single-scalar form.  The comparison always passes Z (and, where available, the
-    breakdown), so the floor uses the true design constant on the same bank the
-    bootstrap and Wald rules see.
-    """
-    if Z is not None:
-        fl = bl.floor_from_design(Z, s_eff, K, sigma_obs=sigma_obs,
-                                  m_hat=m_hat, B=B)
-    else:
-        fl = bl.floor_value(s_eff, d, N, K)
+    if Z is None or sigma_obs is None or m_hat is None or B is None:
+        raise ValueError(
+            "certify_floor requires Z, sigma_obs, m_hat and B for the "
+            "two-term certificate"
+        )
+    fl = bl.certified_floor_from_design(
+        Z, K, sigma_obs_ub=sigma_obs, m_ub=m_hat, B_pop_ub=B,
+    )
     return np.abs(beta) > fl
 
 
