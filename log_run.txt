@@ -1,330 +1,442 @@
-python tier1_synthetic.py all        # ✓ đã chạy — hằng số chốt
-[FORWARD]  collapse: SDR(x) shares one curve across regimes  (x = |beta|/floor) 
-        regime     N     m   sig |  x_0.5  SDR@x=1                              
-      noise-lo   500  0.00  0.05 |   0.25     1.00                              
-      noise-hi  2000  0.00  0.05 |   0.25     1.00                              
-      mismatch  1000  0.10  0.05 |   0.26     1.00                              
-   mixed-noisy  1000  0.10  0.20 |   0.24     1.00                              
-     mixed-big  4000  0.25  0.10 |   0.23     1.00                              
-                                                                                
-  shared crossing x_0.5 = 0.25   CoV = 0.050   PASS (target CoV < 0.25)         
-  x_0.5 < 1 is EXPECTED: the floor pays sqrt(2 log pK) for simultaneity and     
-  detection is sign-only; at x=1, SDR ~ 1 in every regime. The COLLAPSE is the c
-laim.                                                                                                                                                                                                                               
+python tier1_synthetic.py all  
+the two-direction collapse. Dense OLS; no Lasso, no incoherence.
+========================================================================
+
+[Lemma 1]  leakage linchpin   eta_N ~ C_m sqrt(m log(.) / N)  (+ Bernstein sub-exp term, R1.5)
+        m       N      eta_N    predict     C_m    subexp    N_dom  dom?
+    0.005     250    0.00999    0.01316   0.759   0.00513       19   yes
+    0.005     500    0.00715    0.00931   0.768   0.00272       21   yes
+    0.005    1000    0.00513    0.00658   0.780   0.00141       23   yes
+    0.005    2000    0.00361    0.00465   0.776   0.00075       26   yes
+    0.005    4000    0.00271    0.00329   0.823   0.00038       27   yes
+    0.020     250    0.01997    0.02632   0.759   0.01026       19   yes
+    0.020     500    0.01430    0.01861   0.768   0.00544       21   yes
+    0.020    1000    0.01026    0.01316   0.780   0.00281       23   yes
+    0.020    2000    0.00722    0.00931   0.776   0.00149       26   yes
+    0.020    4000    0.00541    0.00658   0.823   0.00076       27   yes
+    0.050     250    0.03158    0.04162   0.759   0.01623       19   yes
+    0.050     500    0.02261    0.02943   0.768   0.00860       21   yes
+    0.050    1000    0.01622    0.02081   0.780   0.00445       23   yes
+    0.050    2000    0.01141    0.01471   0.776   0.00236       26   yes
+    0.050    4000    0.00856    0.01040   0.823   0.00120       27   yes
+    0.100     250    0.04466    0.05885   0.759   0.02295       19   yes
+    0.100     500    0.03197    0.04162   0.768   0.01216       21   yes
+    0.100    1000    0.02294    0.02943   0.780   0.00629       23   yes
+    0.100    2000    0.01614    0.02081   0.776   0.00333       26   yes
+    0.100    4000    0.01211    0.01471   0.823   0.00170       27   yes
+    0.200     250    0.06316    0.08323   0.759   0.03246       19   yes
+    0.200     500    0.04521    0.05885   0.768   0.01720       21   yes
+    0.200    1000    0.03245    0.04162   0.780   0.00890       23   yes
+    0.200    2000    0.02283    0.02943   0.776   0.00471       26   yes
+    0.200    4000    0.01712    0.02081   0.823   0.00240       27   yes
+
+  C_m all-N   (transparency) = 0.781   CoV = 0.028
+  C_m N>=2000 (FROZEN)    = 0.799   CoV = 0.030   PASS (target CoV < 0.20)
+  the ratio drifts UP ~8% with N: this IS the R1.5 sub-exp term (see `subexp`),
+  which inflates small-N eta_N; C_m is an asymptotic sqrt-regime constant, so it is
+  frozen from the large-N rows where the sub-exp term is 2-3 orders below sqrt.
+  R1.5 domination: 25/25 cells have N >= N_dom (sub-exp term dominated, absorbed into C_m). ALL PASS
+[FORWARD]  collapse: SDR(x) shares one curve across regimes  (x = |beta|/floor)                                                                                                                                    
+        regime     N     m   sig |  x_0.5  SDR@x=1                                                                                                                                                                 
+      noise-lo   500  0.00  0.05 |   0.25     1.00                                                                                                                                                                 
+      noise-hi  2000  0.00  0.05 |   0.25     1.00                                                                                                                                                                 
+      mismatch  1000  0.10  0.05 |   0.26     1.00                                                                                                                                                                 
+   mixed-noisy  1000  0.10  0.20 |   0.16     1.00                                                                                                                                                                 
+     mixed-big  4000  0.25  0.10 |   0.23     1.00                                                                                                                                                                 
+                                                                                                                                                                                                                   
+  shared crossing x_0.5 = 0.23   CoV = 0.162   PASS (target CoV < 0.25)                                                                                                                                            
+  x_0.5 < 1 is EXPECTED: the floor pays sqrt(2 log pK) for simultaneity and                                                                                                                                        
+  detection is sign-only; at x=1, SDR ~ 1 in every regime. The COLLAPSE is the claim.                                                                                                                              
+                                                                                                                                                                                                                   
 [BACKWARD]  budget rule -> one constant C_budget (m=0)                                                                                                                                                             
    gamma    beta    N@90%  pred(C=1)  implied C regime                                                                                                                                                             
-    0.20   0.200      999        398      1.584 resolution                                                                                                                                                         
-    0.14   0.140     1793        813      1.485 resolution                                                                                                                                                         
-    0.10   0.100     3725       1593      1.529 resolution                                                                                                                                                         
-    0.07   0.070     7741       3252      1.543 resolution                                                                                                                                                         
-                                                                                                                                                                                                                   
-  C_budget (resolution rows) = 1.535   CoV = 0.023   PASS (target CoV < 0.30)                                                                                                                                      
-  feasibility floor pK = 31; FEASIBILITY rows sit near it and do NOT                                                                                                                                               
-  test the 1/gamma^2 law. This C_budget is the frozen backward constant.                                                                                                                                           
-                                                                                                                                                                                                                   
-========================================================================                                 
-d-SWEEP STABILITY of the FROZEN constants C_m, C_budget (R1.4)                                           
-  Cest is per-run (it grows with d); here we check that the two                                          
-  constants we DO freeze at d=30 are in fact d-stable.                                                   
-========================================================================                                 
-     d    pK  C_m (frozen)   C_budget  Cest_emp                                                          
-    15    16         0.820      1.604     1.439                                                          
-    24    25         0.794      1.561     1.678                                                          
-    30    31         0.833      1.535     1.768                                                          
-    49    50         0.871      1.510     2.256                                                          
-  ----------------------------------------------                                                         
-  MEAN               0.830      1.552     1.785   <- frozen = mean over d                                
-  cross-d CoV: C_m 0.039  C_bud 0.026  C_est 0.192                                                       
+    0.20   0.200      999        433      1.519 resolution                                                                                                                                                         
+    0.14   0.140     1793        884      1.424 resolution
+    0.10   0.100     3725       1732      1.467 resolution
+    0.07   0.070     7741       3535      1.480 resolution
 
-  FROZEN VALUES (mean over d, carried into CONSTANTS):                                                   
-    C_M     = 0.830  (cross-d CoV 0.039 STABLE)                                                          
-    C_BUDGET= 1.552  (cross-d CoV 0.026 STABLE)                                                          
+  C_budget (resolution rows) = 1.472   CoV = 0.023   PASS (target CoV < 0.30)
+  feasibility floor pK = 31; FEASIBILITY rows sit near it and do NOT
+  test the 1/gamma^2 law. This C_budget is the frozen backward constant.
+
+d-SWEEP STABILITY of the FROZEN constants C_m, C_budget (R1.4)
+  Cest is per-run (it grows with d); here we check that the two
+  constants we DO freeze at d=30 are in fact d-stable.
+========================================================================
+     d    pK  C_m (frozen)   C_budget  Cest_emp
+    15    16         0.781      1.587     1.439
+^[[B^[[B^[[B^[[B^[[B^[[B    24    25         0.760      1.494     1.678
+
+
+    30    31         0.799      1.472     1.768
+    49    50         0.839      1.479     2.256
+  ----------------------------------------------
+  MEAN               0.795      1.508     1.785   <- frozen = mean over d
+  cross-d CoV: C_m 0.042  C_bud 0.035  C_est 0.192
+
+  FROZEN VALUES (mean over d, carried into CONSTANTS):
+    C_M     = 0.795  (cross-d CoV 0.042 STABLE)
+    C_BUDGET= 1.508  (cross-d CoV 0.035 STABLE)
     C_est is NOT frozen: cross-d CoV 0.192 (rises 1.44 -> 2.26); measured per run.
 
-  We freeze the MEAN over d, not any single d's value: it would be                                       
-  inconsistent to claim d-stability and then cherry-pick one d. The                                      
-  low cross-d CoV is what licenses a single frozen scalar for C_m,                                       
-  C_budget; the high CoV for C_est is why it is re-measured per run.                                     
+  We freeze the MEAN over d, not any single d's value: it would be
+  inconsistent to claim d-stability and then cherry-pick one d. The
+  low cross-d CoV is what licenses a single frozen scalar for C_m,
+  C_budget; the high CoV for C_est is why it is re-measured per run.
 
-[regime grid] five regimes span the two axes of sigma_eff:                                               
-      noise-lo: sigma_obs=0.05 m=0.00 -> sigma_eff=0.050                                                 
-      noise-hi: sigma_obs=0.05 m=0.00 -> sigma_eff=0.050                                                 
-      mismatch: sigma_obs=0.05 m=0.10 -> sigma_eff=0.314                                                 
-   mixed-noisy: sigma_obs=0.20 m=0.10 -> sigma_eff=0.464                                                 
-     mixed-big: sigma_obs=0.10 m=0.25 -> sigma_eff=0.517                                                 
+[regime grid] five regimes span the two axes of sigma_eff:
+      noise-lo: sigma_obs=0.05 m=0.00 -> sigma_eff=0.050
+      noise-hi: sigma_obs=0.05 m=0.00 -> sigma_eff=0.050
+      mismatch: sigma_obs=0.05 m=0.10 -> sigma_eff=0.301
+   mixed-noisy: sigma_obs=0.20 m=0.10 -> sigma_eff=0.451
+     mixed-big: sigma_obs=0.10 m=0.25 -> sigma_eff=0.497
+
+========================================================================
+TIER 1 CALIBRATION (frozen and carried into Tiers 2-3)
+========================================================================
+    constant    value   role (values are MEAN OVER d, not d=30)
+         C_M    0.795   planning/pilot only (NOT in certified floor)
+     C_FLOOR    1.000   orthonormal ideal only; floor uses per-run C_est
+    C_BUDGET    1.508   budget rule (backward), Eq. 8
+
+  forward collapse point x_0.5 = 0.23 (a point on the shared SDR curve)
+  NOTE: C_FLOOR theory=1 vs empirical>=1 is EXPECTED -- the bound is an upper
+  bound under finite N, query noise, and mismatch. Not an anomaly.
 
 
 
+python tier1b_cert_transfer.py all 
 
-python tier1b_cert_transfer.py all   # ✓ đã chạy — C_est transfer
+[Q1 MECHANISM]  Cest = max{gamma^-1/2, |||Ginv|||_inf} grows with pK at fixed N=4000                                                                                                                               
+  (if it did not rise with pK there would be nothing to transfer)                                                                                                                                                  
+                                                                                                                                                                                                                   
+     d   K     pK    pK/N    gamma     Cinv     Cest                                                                                                                                                               
+    20   1     21   0.005   0.8775   1.3560   1.3560                                                                                                                                                               
+    30   1     31   0.008   0.8464   1.5146   1.5146                                                                                                                                                               
+    40   1     41   0.010   0.8205   1.6721   1.6721                                                                                                                                                               
+    49   1     50   0.013   0.8019   1.8259   1.8259                                                                                                                                                               
+    60   1     61   0.015   0.7790   1.9858   1.9858                                                                                                                                                               
+    80   1     81   0.020   0.7425   2.3094   2.3094                                                                                                                                                               
+                                                                                                                                                                                                                   
+    10   2     56   0.014   0.7710   1.8883   1.8883                                                                                                                                                               
+    14   2    106   0.026   0.6962   2.7087   2.7087                                                                                                                                                               
+    18   2    172   0.043   0.6269   3.7899   3.7899                                                                                                                                                               
+    22   2    254   0.064   0.5572   5.1940   5.1940                                                                                                                                                               
+                                                                                                                                                                                                                   
+  READING: Cinv (a max abs row sum of Ginv) and hence Cest rise with pK at fixed N,                                                                                                                                
+  exactly as the referee notes. The question is whether they are stable in pK/N (Q2).                                                                                                                              
+                                                                           
+                                                                           [Q2 TRANSFER]  Cest_emp vs the ratio pK/N across different (d,K)                                                                                                                                                   
+  claim under test: Cest is a function of pK/N, so a value calibrated                                    
+  at one (d,K) transfers to another AT THE SAME RATIO.                                                   
 
+     d   K     pK       N    pK/N    gamma     Cinv     Cest                                             
+    30   1     31    1550   0.020   0.7591   1.8521   1.8521                                             
+    30   1     31     620   0.050   0.6343   2.4373   2.4373                                             
+    30   1     31     310   0.100   0.5076   3.2939   3.2939                                             
+    30   1     31     155   0.200   0.3472   5.0866   5.0866                                             
+    30   1     31      89   0.348   0.2074   9.2399   9.2399                                             
+    30   1     31      62   0.500   0.1103  17.3777  17.3777                                             
+    49   1     50    2500   0.020   0.7496   2.0323   2.0323                                             
+    49   1     50    1000   0.050   0.6223   2.7778   2.7778                                             
+    49   1     50     500   0.100   0.4986   3.8134   3.8134                                             
+    49   1     50     250   0.200   0.3306   5.9972   5.9972                                             
+    49   1     50     143   0.350   0.1937  10.9782  10.9782                                             
+    49   1     50     100   0.500   0.1054  19.6786  19.6786                                             
+    14   2    106    5300   0.020   0.7362   2.4200   2.4200                                             
+    14   2    106    2120   0.050   0.5959   3.4940   3.4940                                             
+    14   2    106    1060   0.100   0.4615   4.9393   4.9393                                             
+    14   2    106     530   0.200   0.3049   8.0017   8.0017                                             
+    14   2    106     303   0.350   0.1619  15.4504  15.4504                                             
+    14   2    106     212   0.500   0.0834  29.7263  29.7263                                             
+    18   2    172    8600   0.020   0.7348   2.8054   2.8054                                             
+    18   2    172    3440   0.050   0.6014   4.0115   4.0115                                             
+    18   2    172    1720   0.100   0.4628   5.7862   5.7862                                             
+    18   2    172     860   0.200   0.3046   9.5378   9.5378                                             
+    18   2    172     491   0.350   0.1679  17.9693  17.9693                                             
+    18   2    172     344   0.500   0.0851  33.9087  33.9087                                             
+    22   2    254   12700   0.020   0.7350   3.1333   3.1333                                             
+    22   2    254    5080   0.050   0.6014   4.5785   4.5785                                             
+    22   2    254    2540   0.100   0.4692   6.5921   6.5921                                             
+    22   2    254    1270   0.200   0.3060  10.9643  10.9643                                             
+    22   2    254     726   0.350   0.1649  20.6476  20.6476                                             
+    22   2    254     508   0.500   0.0872  37.7660  37.7660   
+     [collapse test]  within each pK/N bin: spread of Cest across the different (d,K) members
+     pK/N  members  Cest_min  Cest_max  spread%    verdict                                               
+     0.02        5    1.8521    3.1333    40.9%      SPLIT                                               
+     0.05        5    2.4373    4.5785    46.8%      SPLIT                                               
+     0.10        5    3.2939    6.5921    50.0%      SPLIT                                               
+     0.20        5    5.0866   10.9643    53.6%      SPLIT                                               
+     0.35        5    9.2399   20.6476    55.2%      SPLIT                                               
+     0.50        5   17.3777   37.7660    54.0%      SPLIT                                               
 
-A single frozen scalar does not transfer; index Cest by pK/N or recompute it
-  per run (it is a pure design quantity, Assumption 1, and cheap to measure).
+  VERDICT: Cest does NOT collapse in pK/N (max within-bin spread 55.2% >= 15%).                          
+  A single frozen scalar does not transfer; index Cest by pK/N or recompute it                           
+  per run (it is a pure design quantity, Assumption 1, and cheap to measure).                            
+
 [Q3 OPERATING POINT]  forward-floor constant Cest_emp at the deployed (d,K,N) vs frozen C_FLOOR
   frozen C_FLOOR = 1.0 (orthonormal ideal). Eq. 6's own constant is Cest = max{gamma^-1/2, |||Ginv|||_inf}.
   gap = Cest_emp / C_FLOOR is the factor by which a floor computed at C_FLOOR under-states the
   true design radius at that point (>1 => forward floor is anti-conservative there).
-                   point     pK       N    pK/N  Cest_emp   gap x  floor honest?
-   calibration  d=30 K=1     31     500   0.062    2.6451    2.65     NO (x2.65)
-   calibration  d=30 K=1     31    1000   0.031    2.0684    2.07     NO (x2.07)
-   calibration  d=30 K=1     31    2000   0.015    1.7347    1.73     NO (x1.73)
-   calibration  d=30 K=1     31    4000   0.008    1.5090    1.51     NO (x1.51)
-   image        d=49 K=1     50     512   0.098    3.7917    3.79     NO (x3.79)
-   image        d=49 K=1     50    1000   0.050    2.7662    2.77     NO (x2.77)
-   image        d=49 K=1     50    2000   0.025    2.1941    2.19     NO (x2.19)
-   image        d=49 K=1     50    4000   0.013    1.8203    1.82     NO (x1.82)
-   enum (short) d=13 K=2     92    2000   0.046    3.1980    3.20     NO (x3.20)
-   enum (short) d=13 K=2     92    4000   0.023    2.4667    2.47     NO (x2.47)
-   enum (short) d=13 K=2     92    8192   0.011    1.9917    1.99     NO (x1.99)
-   enum (mid)   d=18 K=2    172    4000   0.043    3.7729    3.77     NO (x3.77)
-   enum (mid)   d=18 K=2    172    8000   0.021    2.8739    2.87     NO (x2.87)
-   enum (mid)   d=18 K=2    172   16000   0.011    2.2841    2.28     NO (x2.28)
-  READING (R1.4 verdict on the forward floor):
+
+                   point     pK       N    pK/N  Cest_emp   gap x  floor honest?                         
+   calibration  d=30 K=1     31     500   0.062    2.6451    2.65     NO (x2.65)                         
+   calibration  d=30 K=1     31    1000   0.031    2.0684    2.07     NO (x2.07)                         
+   calibration  d=30 K=1     31    2000   0.015    1.7347    1.73     NO (x1.73)                         
+   calibration  d=30 K=1     31    4000   0.008    1.5090    1.51     NO (x1.51)                         
+
+   image        d=49 K=1     50     512   0.098    3.7917    3.79     NO (x3.79)                         
+   image        d=49 K=1     50    1000   0.050    2.7662    2.77     NO (x2.77)                         
+   image        d=49 K=1     50    2000   0.025    2.1941    2.19     NO (x2.19)                         
+   image        d=49 K=1     50    4000   0.013    1.8203    1.82     NO (x1.82)                         
+
+   enum (short) d=13 K=2     92    2000   0.046    3.1980    3.20     NO (x3.20)                         
+   enum (short) d=13 K=2     92    4000   0.023    2.4667    2.47     NO (x2.47)                         
+   enum (short) d=13 K=2     92    8192   0.011    1.9917    1.99     NO (x1.99)                         
+
+   enum (mid)   d=18 K=2    172    4000   0.043    3.7729    3.77     NO (x3.77)                         
+   enum (mid)   d=18 K=2    172    8000   0.021    2.8739    2.87     NO (x2.87)                         
+   enum (mid)   d=18 K=2    172   16000   0.011    2.2841    2.28     NO (x2.28)        
+
+
+  READING (R1.4 verdict on the forward floor):                                                           
     Cest_emp > 1 at every deployed point, so a forward floor computed with C_FLOOR = 1.0 is
-    NOT a strict upper bound -- it under-states the true simultaneous radius by the gap x
+    NOT a strict upper bound -- it under-states the true simultaneous radius by the `gap x`
     factor. To make the forward guarantee hold as stated, freeze C_FLOOR to the measured Cest_emp
-    at the deployed pK/N band (the max gap x per point below), or recompute Cest per run
+    at the deployed pK/N band (the max `gap x` per point below), or recompute Cest per run
     (cheap; pure design). This is the concrete fix R1.4 asks for; the transfer is then honest
     BECAUSE C_FLOOR tracks Cest(pK/N) rather than being pinned at the orthonormal ideal.
-  max gap per deployed point (candidate C_FLOOR to freeze):
-     calibration  d=30 K=1 : C_FLOOR >= 2.645
-     image        d=49 K=1 : C_FLOOR >= 3.792
-     enum (short) d=13 K=2 : C_FLOOR >= 3.198
-     enum (mid)   d=18 K=2 : C_FLOOR >= 3.773
-========================================================================
-SUMMARY (R1.4): Q1 shows Cest grows with pK (concern is real);
-Q2 tests whether it collapses in pK/N (transfer axis); Q3 checks
-the frozen C_FLOOR against the actually deployed points.
+
+  max gap per deployed point (candidate C_FLOOR to freeze):                                              
+     calibration  d=30 K=1 : C_FLOOR >= 2.645                                                            
+     image        d=49 K=1 : C_FLOOR >= 3.792                                                            
+     enum (short) d=13 K=2 : C_FLOOR >= 3.198                                                            
+     enum (mid)   d=18 K=2 : C_FLOOR >= 3.773                                                            
+
+========================================================================                                 
+SUMMARY (R1.4): Q1 shows Cest grows with pK (concern is real);                                           
+Q2 tests whether it collapses in pK/N (transfer axis); Q3 checks                                         
+the frozen C_FLOOR against the actually deployed points.             
 
 
 
 
-python tier2_blackbox.py image --beta_min 0.05 --N_ladder 512,1000,2000,4000 \
+
+ python tier2_blackbox.py image --beta_min 0.05 --N_ladder 512,1000,2000,4000 \
     --backbones resnet50,resnet18,vit_b_16 --references white,black,mean \
     --images_dir image_samples --glob "*.JPEG"
-
+tier2-image K=1:   0%|                                                                                                                                          tier2-image K=1:   0%| | 0/450 [00:07<?, ?item/s, resnet50/white d=49 flips=0 ra                                                            tier2-image K=1: 100%|█████████████████████████████████████| 450/450 [1:19:10<00:00, 10.56s/item, vit_b_16/mean d=49 flips=0 ratio=1.29 | tot flips 0]
 
 ========================================================================
-TIER 2 -- guarantee table (K=1, beta_min=0.05). Constants frozen from Tier 1.
+TIER 2 -- forward stability + backward planning (K=1, beta_min=0.05).
 ========================================================================
                     cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
-          resnet50/white  49   0.8920   1.81  2.34 |       0/419 |     1.157        |     0   100
-          resnet50/black  49   0.9322   1.81  2.33 |       0/366 |     1.146        |     0   100
-           resnet50/mean  49   0.7877   1.81  2.35 |       0/297 |     1.221        |     0   100
-          resnet18/white  49   1.4265   1.81  2.34 |       0/520 |     1.016        |     0   100
-          resnet18/black  49   1.4679   1.81  2.34 |       0/428 |     1.004        |     0   100
-           resnet18/mean  49   1.4029   1.81  2.35 |       0/628 |     1.018        |     0   100
-          vit_b_16/white  49   0.7678   1.81  2.41 |       0/243 |     1.260        |     0   100
-          vit_b_16/black  49   0.7101   1.81  2.42 |       0/212 |     1.362        |     0   100
-           vit_b_16/mean  49   0.7232   1.81  2.40 |       0/226 |     1.355        |     0   100
+          resnet50/white  49   0.8544   1.81  2.45 |       0/387 |     1.259        |     0   100
+          resnet50/black  49   0.8928   1.81  2.44 |       0/340 |     1.238        |     0   100
+           resnet50/mean  49   0.7545   1.81  2.46 |       0/277 |     1.324        |     0   100
+          resnet18/white  49   1.3663   1.81  2.45 |       0/483 |     1.098        |     0   100
+          resnet18/black  49   1.4060   1.81  2.45 |       0/389 |     1.096        |     0   100
+           resnet18/mean  49   1.3437   1.81  2.46 |       0/577 |     1.096        |     0   100
+          vit_b_16/white  49   0.7354   1.81  2.52 |       0/227 |     1.405        |     0   100
+          vit_b_16/black  49   0.6801   1.81  2.54 |       0/194 |     1.491        |     0   100
+           vit_b_16/mean  49   0.6927   1.81  2.51 |       0/206 |     1.478        |     0   100
 
-  FORWARD  : certified sign flips = 0 / 3339 certified-in-both-budget checks  (rate 0.0000; target 0)
-  BACKWARD : realized/target ratio  median 1.157  range [1.004, 1.362]  (target <= 1)
+  FORWARD  : certified sign flips = 0 / 3080 certified-in-both-budget checks  (rate 0.0000; target 0)
+  BACKWARD : realized/target ratio  median 1.259  range [1.096, 1.491]  (target <= 1)
 
   [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
     count-monotone: 100.0%    set-nested: 100.0%
 
   [R1.4 realized floor constant]
     Cest measured per run from the design (median 1.81, range [1.81, 1.81]); NOT the frozen C_FLOOR=1.
-    floor inflation vs old frozen-C_FLOOR floor: median 2.35x (range [2.33, 2.42]).
+    floor inflation vs old frozen-C_FLOOR floor: median 2.46x (range [2.44, 2.54]).
     The forward floor is now a genuine upper bound; the certified counts above reflect it.
 
   [correctness-fix diagnostics]
     R1.6 negative-clip fraction (raw m_hat<0, then clipped to 0): 0.0% of items
          clipping is conservative (raises sigma_eff); nonzero mainly in degenerate/deterministic cells.
     R1.5 Bernstein-domination: 100.0% of items run at N >= (2B^2/9m) log(.), sub-exp term dominated.
-(xfrt128) anhnda@xaibk1:~/BGL$ 
+
+
+
+
 
 
 python tier2_blackbox.py nlp --K 1 --references mask,pad,zero \
     --backbones distilbert,roberta,visobert --beta_min 0.02 \
     --N_ladder 512,1000,2000,4000 --sentences text_samples/sst2_short.txt
-
+tier2-nlp K=1:  33%|████████████████████████████████▋                                                                 | 360/1080 [03:47<08:12,  1.46item/s, distilbert/zero d=15 flips=0 ratio=13.45 | tot flips 0]
+Some weights of the model checkpoint at textattack/roberta-base-SST-2 were not used when initializing RobertaForSequenceClassification: ['roberta.pooler.dense.bias', 'roberta.pooler.dense.weight']
+- This IS expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+tier2-nlp K=1: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████| 1080/1080 [21:04<00:00,  1.17s/item, visobert/zero d=18 flips=0 ratio=11.18 | tot flips 0]
 
 ========================================================================
-TIER 2 -- guarantee table (K=1, beta_min=0.02). Constants frozen from Tier 1.
+TIER 2 -- forward stability + backward planning (K=1, beta_min=0.02).
 ========================================================================
                     cell   d  sig_eff   Cest  flr× |   flips/cmp | BWD ratio  clamp |  neg%  dom%
-         distilbert/mask  15   0.1646   1.27  1.65 |      0/1448 |     1.129    yes |     0   100
-          distilbert/pad  15   0.1632   1.27  1.66 |      0/1555 |     1.125    yes |     0    98
-         distilbert/zero  15   0.1276   1.27  1.69 |      0/1311 |     1.200    yes |     0    95
-            roberta/mask  15   0.1665   1.26  1.64 |      0/1301 |     1.119    yes |     0   100
-             roberta/pad  15   0.1492   1.26  1.64 |      0/1486 |     1.186        |     0   100
-            roberta/zero  15   0.1637   1.26  1.64 |      0/1357 |     1.135        |     0   100
-           visobert/mask  24   0.2127   1.42  1.82 |      0/1538 |     1.160        |     0   100
-            visobert/pad  24   0.1934   1.42  1.84 |      0/1146 |     1.174    yes |     0    99
-           visobert/zero  24   0.0885   1.42  2.01 |       0/840 |     1.459    yes |     0    88
+         distilbert/mask  15   0.1577   1.27  2.42 |       0/743 |     1.844    yes |     0   100
+          distilbert/pad  15   0.1563   1.27  2.42 |       0/778 |     1.806    yes |     0    98
+         distilbert/zero  15   0.1222   1.27  2.60 |       0/558 |     2.201    yes |     0    93
+            roberta/mask  15   0.1595   1.26  2.39 |       0/662 |     1.781    yes |     0   100
+             roberta/pad  15   0.1429   1.26  2.53 |       0/750 |     2.073        |     0   100
+            roberta/zero  15   0.1568   1.26  2.41 |       0/698 |     1.836        |     0    99
+           visobert/mask  24   0.2038   1.42  2.68 |       0/684 |     1.757        |     0   100
+            visobert/pad  24   0.1852   1.42  2.73 |       0/504 |     1.856    yes |     0    99
+           visobert/zero  24   0.0848   1.42  4.09 |       0/262 |    12.141    yes |     0    84
 
-  FORWARD  : certified sign flips = 0 / 11982 certified-in-both-budget checks  (rate 0.0000; target 0)
-  BACKWARD : realized/target ratio  median 1.160  range [1.119, 1.459]  (target <= 1)
+  FORWARD  : certified sign flips = 0 / 5639 certified-in-both-budget checks  (rate 0.0000; target 0)
+  BACKWARD : realized/target ratio  median 1.844  range [1.757, 12.141]  (target <= 1)
 
   [appendix diagnostics -- near-guaranteed by prefix construction, NOT theorem evidence]
-    count-monotone: 99.8%    set-nested: 99.8%
+    count-monotone: 100.0%    set-nested: 100.0%
 
   [R1.4 realized floor constant]
     Cest measured per run from the design (median 1.27, range [1.26, 1.42]); NOT the frozen C_FLOOR=1.
-    floor inflation vs old frozen-C_FLOOR floor: median 1.66x (range [1.64, 2.01]).
+    floor inflation vs old frozen-C_FLOOR floor: median 2.53x (range [2.39, 4.09]).
     The forward floor is now a genuine upper bound; the certified counts above reflect it.
 
   [correctness-fix diagnostics]
     R1.6 negative-clip fraction (raw m_hat<0, then clipped to 0): 0.0% of items
          clipping is conservative (raises sigma_eff); nonzero mainly in degenerate/deterministic cells.
-    R1.5 Bernstein-domination: 97.9% of items run at N >= (2B^2/9m) log(.), sub-exp term dominated.
+    R1.5 Bernstein-domination: 97.1% of items run at N >= (2B^2/9m) log(.), sub-exp term dominated.
 
 
 
 
-
-python tier2_blackbox.py exact-nlp --K 2 --subset 10 --max_d 13 \
+ python tier2_blackbox.py exact-nlp --K 2 --subset 10 --max_d 13 \
     --sentences text_samples/sst2_short.txt
   enumerating full cube when d<=13 (<= 8192 calls/probe); larger d are SKIPPED (no exact beta -- no random-bank stand-in).                                                                                         
-exact-nlp K=2:  32%|███████████████████████████████████████▉                                                                                    | 29/90 [00:03<00:02, 21.94item/s, distilbert/zero d=15 > 13: SKIP]
+exact-nlp K=2:  32%|███████████████████████████████████████▉                                                                                    | 29/90 [00:03<00:05, 11.48item/s, distilbert/zero d=15 > 13: SKIP]
 Some weights of the model checkpoint at textattack/roberta-base-SST-2 were not used when initializing RobertaForSequenceClassification: ['roberta.pooler.dense.bias', 'roberta.pooler.dense.weight']
 - This IS expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
 - This IS NOT expected if you are initializing RobertaForSequenceClassification from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
-exact-nlp K=2: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 90/90 [00:21<00:00,  4.25item/s, visobert/zero d=22 > 13: SKIP]
+exact-nlp K=2: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 90/90 [00:17<00:00,  5.07item/s, visobert/zero d=22 > 13: SKIP]
 
 ========================================================================
 EXACT-BETA sign-correctness (NLP K=2)
 ========================================================================
   enumerable probes: 21  (d in [7, 13], exact cube 2^d); 69 probes skipped (d > 13)
-  certified coords : 21
+  certified coords : 135
   false signs      : 0
   false-sign rate  : 0.0000   (Theorem 1 forward claim, exact ground truth; target 0)
 
   [R1.9 POWER -- zero false signs is only meaningful with the miss rate]
   (1) GUARANTEE (Theorem-1 margin at the RUN floor: |beta_exact| > 2*fl_run):
-      truth   10   recovered   10   MISS    0   power 1.000
+      truth   66   recovered   66   MISS    0   power 1.000
       -> this is the guarantee denominator; MISS MUST be 0 (the margin promises
          every such coord clears the run floor). MISS=0 with zero false signs
          is the theorem holding on exact ground truth.
   (2) RESOLUTION recovery (vs the full-cube floor: |beta_exact| > fl_exact):
-      cube-resolvable  281   run-recovered   21   unresolved  260   power 0.075
+      cube-resolvable  315   run-recovered   72   unresolved  243   power 0.229
       -> the full cube (huge N) resolves more than a deployment budget; the gap
          is the honest finite-budget resolution cost ('below-floor = unresolved,
          not zero'), NOT a guarantee violation. A low number here means the run
          budget was small relative to what the reference could support.
 
-
-
- python tier2b_reseed.py image --backbones resnet50 --references mean \
+python tier2b_reseed.py image --backbones resnet50 --references mean \
     --N 2000 --R 40 --subset 1 --images_dir image_samples --glob "*.JPEG"
   [tier2b-image] 1 images x 1x1 cells, R=40 seeds each (~expect minutes per image at large R).
-tier2b-image N=2000 R=40: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [01:55<00:00, 115.71s/item, resnet50/mean d=49 viol=0/109 runfail=0/40]
+tier2b-image N=2000 R=40: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [01:55<00:00, 115.21s/item, resnet50/mean d=49 dis=0/88 rundis=0/40]
 
-========================================================================
-TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
-           pilot: plain point-estimate sigma_eff -- conditional (split=3)
-========================================================================
-                  cell   pK |    viol/cert    rate    1/pK |  run_fail/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
-         resnet50/mean   50 |        0/109  0.0000  0.0200 |           0/40  0.0000 |  1.000     1.000   0.0/2.0  
+==============================================================================
+TIER 2b -- INDEPENDENT-RESEEDING STABILITY AUDIT (N=2000, R=40, K=1)
+pilot: cross-fitted plug-in planning pilot (split=3); stability diagnostic, not a theorem-level coverage test
+==============================================================================
+                  cell   pK |     dis/cert    rate 1/pK ref |   run_dis/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         resnet50/mean   50 |         0/88  0.0000   0.0200 |           0/40  0.0000 |     NA     1.000   0.0/2.0  
 
-  (A) PER-COORDINATE cross-seed sign-disagreement (stability, not correctness):
-      0/109 = 0.0000   target <= 1/pK (~0.0200)   [OK]
-  (R1.7) PER-RUN simultaneous failure (ANY certified coord disagrees) -- the faithful test of Theorem 1's 1-delta clause:
-      0/40 = 0.0000   target <= delta = 1/pK (~0.0200)   [OK]
-  (B) set churn is confined to the unresolved band (Definition 1):
-      mean Jaccard above 2*floor = 1.000  (near 1 = stable); in band [floor,2floor] = 1.000  (lower = churn, as predicted)
+  Cross-seed sign disagreement (STABILITY, not correctness):
+    per-coordinate: 0/88 = 0.0000
+    per-run/item  : 0/40 = 0.0000
+    nominal 1/pK reference scale: ~0.0200 (shown for context, not a theorem calibration target)
+  Set stability:
+    Jaccard above 2*floor = NA; in [floor,2floor] = 1.000
+  NOTE: two seeds can agree and both be wrong. Exact-beta enumeration is the correctness check.
 
-  NOTE: cross-seed agreement is STABILITY, not correctness -- two seeds
-        can agree and both be wrong. Only the enumeration tier (exact
-        beta) tests correctness.
-
-  % ---- booktabs table for the appendix ----
+  % ---- booktabs row(s) for Table 4 ----
   \begin{tabular}{lrrrrrr}
   \toprule
-  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  Cell & $p_K$ & per-coord & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
   \midrule
-  resnet50/mean & 50 & 0.0000 & 0.0000 & 0.0200 & 1.000 & 1.000 \\
+  resnet50/mean & 50 & 0.0000 & 0.0000 & 0.0200 & NA & 1.000 \\
   \bottomrule
   \end{tabular}
 
 
-
- python tier2b_reseed.py nlp --backbones visobert --references zero \
+python tier2b_reseed.py nlp --backbones visobert --references zero \
     --N 2000 --R 40 --subset 10 --sentences text_samples/sst2_short.txt
-tier2b-nlp N=2000 R=40: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [04:55<00:00, 29.57s/item, visobert/zero d=22 viol=17/218 runfail=8/40]
+tier2b-nlp N=2000 R=40: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [04:55<00:00, 29.54s/item, visobert/zero d=22 dis=16/210 rundis=7/40]
 
-========================================================================
-TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
-           pilot: plain point-estimate sigma_eff -- conditional (split=3)
-========================================================================
-                  cell   pK |    viol/cert    rate    1/pK |  run_fail/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
-         visobert/zero   24 |      17/1313  0.0129  0.0417 |          8/256  0.0312 |  1.000     0.979   0.7/1.8  
+==============================================================================
+TIER 2b -- INDEPENDENT-RESEEDING STABILITY AUDIT (N=2000, R=40, K=1)
+pilot: cross-fitted plug-in planning pilot (split=3); stability diagnostic, not a theorem-level coverage test
+==============================================================================
+                  cell   pK |     dis/cert    rate 1/pK ref |   run_dis/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         visobert/zero   24 |      16/1229  0.0130   0.0417 |          7/400  0.0175 |  1.000     0.957   0.7/1.7  
 
-  (A) PER-COORDINATE cross-seed sign-disagreement (stability, not correctness):
-      17/1313 = 0.0129   target <= 1/pK (~0.0417)   [OK]
-  (R1.7) PER-RUN simultaneous failure (ANY certified coord disagrees) -- the faithful test of Theorem 1's 1-delta clause:
-      8/256 = 0.0312   target <= delta = 1/pK (~0.0417)   [OK]
-  (B) set churn is confined to the unresolved band (Definition 1):
-      mean Jaccard above 2*floor = 1.000  (near 1 = stable); in band [floor,2floor] = 0.979  (lower = churn, as predicted)
+  Cross-seed sign disagreement (STABILITY, not correctness):
+    per-coordinate: 16/1229 = 0.0130
+    per-run/item  : 7/400 = 0.0175
+    nominal 1/pK reference scale: ~0.0417 (shown for context, not a theorem calibration target)
+  Set stability:
+    Jaccard above 2*floor = 1.000; in [floor,2floor] = 0.957
+  NOTE: two seeds can agree and both be wrong. Exact-beta enumeration is the correctness check.
 
-  NOTE: cross-seed agreement is STABILITY, not correctness -- two seeds
-        can agree and both be wrong. Only the enumeration tier (exact
-        beta) tests correctness.
-
-  % ---- booktabs table for the appendix ----
+  % ---- booktabs row(s) for Table 4 ----
   \begin{tabular}{lrrrrrr}
   \toprule
-  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  Cell & $p_K$ & per-coord & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
   \midrule
-  visobert/zero & 24 & 0.0129 & 0.0312 & 0.0417 & 1.000 & 0.979 \\
+  visobert/zero & 24 & 0.0130 & 0.0175 & 0.0417 & 1.000 & 0.957 \\
   \bottomrule
   \end{tabular}
 
 
 python tier2b_reseed.py nlp --backbones visobert --references zero \
     --N 2000 --R 40 --subset 10 --pilot ucb --sentences text_samples/sst2_short.txt
-tier2b-nlp N=2000 R=40:   0%|                                                                                                                                   tier2b-nlp N=2000 R=40:   0%|                                                                                                                 | 0/10 [00:32<?, ?tier2b-nlp N=2000 R=40:  10%|██████████▌                                                                                              | 1/10 [00:32<04:53, 32.56tier2b-nlp N=2000 R=40:  10%| | 1/10 [01:09<04:53, 32.56s/item, visobert/zero d=                                                                                tier2b-nlp N=2000 R=40:  20%|▏| 2/10 [01:09<04:42, 35.31s/item, visobert/zero d=
-tier2b-nlp N=2000 R=40: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [04:55<00:00, 29.57s/item, visobert/zero d=22 viol=0/0 runfail=0/0]
+tier2b-nlp N=2000 R=40: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [04:55<00:00, 29.51s/item, visobert/zero d=22 dis=0/0 rundis=0/40]
 
-========================================================================
-TIER 2b -- INDEPENDENT-RESEEDING AUDIT  (fixed N=2000, R=40 seeds, K=1)
-           pilot: UCB upper-confidence sigma_eff (R2.1): discharges Theorem 1's pilot
-                  conditioning hypothesis w.h.p. (split=4). Does NOT by itself force
-                  the per-run rate below 1/pK -- a near-degenerate cell can remain in
-                  the residual conditional regime the paper flags as a limitation.
-========================================================================
-                  cell   pK |    viol/cert    rate    1/pK |  run_fail/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
-         visobert/zero   24 |        0/668  0.0000  0.0417 |          0/199  0.0000 |  1.000     0.984   0.4/1.1  
+==============================================================================
+TIER 2b -- INDEPENDENT-RESEEDING STABILITY AUDIT (N=2000, R=40, K=1)
+pilot: held-out mismatch-energy UCB (split=4); m_UCB is plugged directly into the two-term floor
+==============================================================================
+                  cell   pK |     dis/cert    rate 1/pK ref |   run_dis/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         visobert/zero   24 |        0/150  0.0000   0.0417 |          0/400  0.0000 |     NA     0.932   0.0/0.4  
 
-  (A) PER-COORDINATE cross-seed sign-disagreement (stability, not correctness):
-      0/668 = 0.0000   target <= 1/pK (~0.0417)   [OK]
-  (R1.7) PER-RUN simultaneous failure (ANY certified coord disagrees) -- the faithful test of Theorem 1's 1-delta clause:
-      0/199 = 0.0000   target <= delta = 1/pK (~0.0417)   [OK]
-  (B) set churn is confined to the unresolved band (Definition 1):
-      mean Jaccard above 2*floor = 1.000  (near 1 = stable); in band [floor,2floor] = 0.984  (lower = churn, as predicted)
+  Cross-seed sign disagreement (STABILITY, not correctness):
+    per-coordinate: 0/150 = 0.0000
+    per-run/item  : 0/400 = 0.0000
+    nominal 1/pK reference scale: ~0.0417 (shown for context, not a theorem calibration target)
+  Set stability:
+    Jaccard above 2*floor = NA; in [floor,2floor] = 0.932
+  NOTE: two seeds can agree and both be wrong. Exact-beta enumeration is the correctness check.
 
-  NOTE: cross-seed agreement is STABILITY, not correctness -- two seeds
-        can agree and both be wrong. Only the enumeration tier (exact
-        beta) tests correctness.
-
-  % ---- booktabs table for the appendix ----
+  % ---- booktabs row(s) for Table 4 ----
   \begin{tabular}{lrrrrrr}
   \toprule
-  Cell & $p_K$ & viol/cert & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  Cell & $p_K$ & per-coord & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
   \midrule
-  visobert/zero & 24 & 0.0000 & 0.0000 & 0.0417 & 1.000 & 0.984 \\
+  visobert/zero & 24 & 0.0000 & 0.0000 & 0.0417 & NA & 0.932 \\
   \bottomrule
   \end{tabular}
-(xfrt128) anhnda@xaibk1:~/BGL$ 
+
 
 python baselines.py image --backbones resnet50 --references mean --N 2000 --B 200 \
     --subset 10 --images_dir image_samples --glob "*.JPEG"
-baselines-image K=1: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:37<00:00,  3.79s/item, resnet50/mean d=49 agree=45% waldALL=True]
+baselines-image K=1: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [00:37<00:00,  3.76s/item, resnet50/mean d=49 agree=45% waldALL=True]
 
 ========================================================================
 FLOOR vs BOOTSTRAP vs WALD  (Image K=1, shared bank N=2000, B=200)
 ========================================================================
   coords (total over items)     : 490
   mean sigma_obs over items     : 0.0000  (sigma_obs~0 -> floor is mismatch-driven (sigma_eff = C_m sqrt(m)))
-  floor vs bootstrap agreement  : 53.3%
-  floor certified  (mean/item)  : 3.4
+  floor vs bootstrap agreement  : 53.1%
+  floor certified  (mean/item)  : 3.3
   bootstrap cert.  (mean/item)  : 26.3
   FLOOR-ONLY (floor yes, boot no, mean/item) : 0.00
     -> 0.00 => floor never certifies a coord the bootstrap rejects
-  BOOT-ONLY  (boot yes, floor no, mean/item) : 22.90
+  BOOT-ONLY  (boot yes, floor no, mean/item) : 23.00
     -> all disagreement is bootstrap-only certification of near-floor coords;
        the floor is the more conservative simultaneous rule.
 
@@ -337,8 +449,8 @@ FLOOR vs BOOTSTRAP vs WALD  (Image K=1, shared bank N=2000, B=200)
   [fair Wald, SE from FITTED RESIDUALS -- absorbs mismatch (R1.10)]
     fair-Wald certified (mean/item)            : 26.2
     fair-Wald certified-ALL items              : 0/10
-    floor vs fair-Wald agreement               : 53.5%
-    FAIR-WALD-ONLY (fair-Wald yes, floor no, mean/item): 22.80
+    floor vs fair-Wald agreement               : 53.3%
+    FAIR-WALD-ONLY (fair-Wald yes, floor no, mean/item): 22.90
     FLOOR-ONLY vs fair-Wald (floor yes, fW no, mean/item): 0.00
     -> the fair Wald does NOT degenerate as sigma_obs->0 (its SE sees the
        mismatch through the residuals). Where it still over-certifies vs the
@@ -354,29 +466,129 @@ FLOOR vs BOOTSTRAP vs WALD  (Image K=1, shared bank N=2000, B=200)
        mismatch the fair Wald absorbs through its residual variance.
 
 
-       python tier3_feasibility.py
+     python tier3_feasibility.py
 ========================================================================
 TIER 3 -- FEASIBILITY (Reading 2): why K=2 costs more, less noise
 ========================================================================
   d=18, n_active=4, m_resid=0.05, sigma_obs=0.05, beta_min=0.02
-  C_budget=1.552 (frozen from Tier 1)
+  C_budget=1.508 (frozen from Tier 1)
 
     K     pK  sigma_eff     N_res   N_feas     N_run       binds
-    1     19     0.2472      5142       57      5142  resolution
-    2    172     0.2264      7037      516      7037  resolution
+    1     19     0.2389      4983       57      4983  resolution
+    2    172     0.2190      6592      516      6592  resolution
 
   READING:
-    sigma_eff FALLS K=1 -> K=2 : 0.2472 -> 0.2264 (pairwise moves from mismatch into the fit)
+    sigma_eff FALLS K=1 -> K=2 : 0.2389 -> 0.2190 (pairwise moves from mismatch into the fit)
     pK JUMPS  19 -> 172  (~ d^2/2), lifting the feasibility floor
-    => running budget RISES 5142 -> 7037 DESPITE lower noise.
+    => running budget RISES 4983 -> 6592 DESPITE lower noise.
     The certificate draws the identifiability line: if budget << p2=172,
     dense pairwise LIME is not identifiable and must not be read as an interaction map.
 
   [figure data] feasibility floor vs resolution budget across d (K=2)
      d      p2  sigma_eff     N_res   N_feas       binds
-     8      37     0.2147      4618      111  resolution
-    12      79     0.2433      7015      237  resolution
-    16     137     0.2272      6798      411  resolution
-    20     211     0.2244      7160      633  resolution
-    24     301     0.2189      7224      903  resolution
-    30     466     0.2164      7547     1398  resolution
+     8      37     0.2077      4422      111  resolution
+    12      79     0.2352      6623      237  resolution
+    16     137     0.2197      6384      411  resolution
+    20     211     0.2171      6696      633  resolution
+^[[B    24     301     0.2118      6737      903  resolution
+    30     466     0.2093      7016     1398  resolution
+
+
+
+
+ python tier2b_reseed.py nlp \
+  --backbones visobert \
+  --references zero \
+  --sentences text_samples/sst2_samples.txt \
+  --N 2000 --R 40 --K 1 --subset 10 \
+  --pilot plain
+tier2b-nlp N=2000 R=40: 100%|██████████████████████████████████████████████| 10/10 [01:44<00:00, 10.44s/item, visobert/zero (skipped: d out of range)]
+
+==============================================================================
+TIER 2b -- INDEPENDENT-RESEEDING STABILITY AUDIT (N=2000, R=40, K=1)
+pilot: cross-fitted plug-in planning pilot (split=3); stability diagnostic, not a theorem-level coverage test
+==============================================================================
+                  cell   pK |     dis/cert    rate 1/pK ref |   run_dis/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         visobert/zero   17 |      82/1618  0.0507   0.0588 |         18/160  0.1125 |  1.000     0.825   3.0/5.1  
+
+  Cross-seed sign disagreement (STABILITY, not correctness):
+    per-coordinate: 82/1618 = 0.0507
+    per-run/item  : 18/160 = 0.1125
+    nominal 1/pK reference scale: ~0.0588 (shown for context, not a theorem calibration target)
+  Set stability:
+    Jaccard above 2*floor = 1.000; in [floor,2floor] = 0.825
+  NOTE: two seeds can agree and both be wrong. Exact-beta enumeration is the correctness check.
+
+  % ---- booktabs row(s) for Table 4 ----
+  \begin{tabular}{lrrrrrr}
+  \toprule
+  Cell & $p_K$ & per-coord & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  \midrule
+  visobert/zero & 17 & 0.0507 & 0.1125 & 0.0588 & 1.000 & 0.825 \\
+  \bottomrule
+  \end{tabular}
+
+
+python tier2b_reseed.py nlp \
+  --backbones visobert \
+  --references zero \
+  --sentences text_samples/sst2_samples.txt \
+  --N 2000 --R 40 --K 1 --subset 10 \
+  --pilot ucb
+tier2b-nlp N=2000 R=40: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [01:33<00:00,  9.34s/item, visobert/zero (skipped: d out of range)]
+
+==============================================================================
+TIER 2b -- INDEPENDENT-RESEEDING STABILITY AUDIT (N=2000, R=40, K=1)
+pilot: held-out mismatch-energy UCB (split=4); m_UCB is plugged directly into the two-term floor
+==============================================================================
+                  cell   pK |     dis/cert    rate 1/pK ref |   run_dis/runs    rate |  J>2fl J[fl,2fl]  #>2fl/#band
+         visobert/zero   17 |        0/297  0.0000   0.0588 |          0/160  0.0000 |  1.000     1.000   0.5/1.2  
+
+  Cross-seed sign disagreement (STABILITY, not correctness):
+    per-coordinate: 0/297 = 0.0000
+    per-run/item  : 0/160 = 0.0000
+    nominal 1/pK reference scale: ~0.0588 (shown for context, not a theorem calibration target)
+  Set stability:
+    Jaccard above 2*floor = 1.000; in [floor,2floor] = 1.000
+  NOTE: two seeds can agree and both be wrong. Exact-beta enumeration is the correctness check.
+
+  % ---- booktabs row(s) for Table 4 ----
+  \begin{tabular}{lrrrrrr}
+  \toprule
+  Cell & $p_K$ & per-coord & per-run & $1/p_K$ & $J_{>2\mathrm{fl}}$ & $J_{[\mathrm{fl},2\mathrm{fl}]}$ \\
+  \midrule
+  visobert/zero & 17 & 0.0000 & 0.0000 & 0.0588 & 1.000 & 1.000 \\
+  \bottomrule
+  \end{tabular}
+
+
+$ python tier2_blackbox.py exact-nlp \
+  --K 2 --subset 10 --max_d 13 \
+  --backbones visobert \
+  --references mask,pad,zero \
+  --dataset sst2 \
+  --sentences text_samples/sst2_samples.txt
+  enumerating full cube when d<=13 (<= 8192 calls/probe); larger d are SKIPPED (no exact beta -- no random-bank stand-in).                                                                                         
+exact-nlp K=2: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 30/30 [00:03<00:00,  9.47item/s, visobert/zero d=24 > 13: SKIP]
+
+========================================================================
+EXACT-BETA sign-correctness (NLP K=2)
+========================================================================
+  enumerable probes: 3  (d in [8, 8], exact cube 2^d); 27 probes skipped (d > 13)
+  certified coords : 54
+  false signs      : 0
+  false-sign rate  : 0.0000   (Theorem 1 forward claim, exact ground truth; target 0)
+
+  [R1.9 POWER -- zero false signs is only meaningful with the miss rate]
+  (1) GUARANTEE (Theorem-1 margin at the RUN floor: |beta_exact| > 2*fl_run):
+      truth   24   recovered   24   MISS    0   power 1.000
+      -> this is the guarantee denominator; MISS MUST be 0 (the margin promises
+         every such coord clears the run floor). MISS=0 with zero false signs
+         is the theorem holding on exact ground truth.
+  (2) RESOLUTION recovery (vs the full-cube floor: |beta_exact| > fl_exact):
+      cube-resolvable   19   run-recovered   19   unresolved    0   power 1.000
+      -> the full cube (huge N) resolves more than a deployment budget; the gap
+         is the honest finite-budget resolution cost ('below-floor = unresolved,
+         not zero'), NOT a guarantee violation. A low number here means the run
+         budget was small relative to what the reference could support.
+(xfrt128) anhnda@xaibk1:~/BGL$ 
