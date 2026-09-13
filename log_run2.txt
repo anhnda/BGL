@@ -1,0 +1,104 @@
+python tier1_synthetic.py all  
+the two-direction collapse. Dense OLS; no Lasso, no incoherence.
+========================================================================
+
+[Lemma 1]  leakage linchpin   eta_N ~ C_m sqrt(m log(.) / N)  (+ Bernstein sub-exp term, R1.5)
+        m       N      eta_N    predict     C_m    subexp    N_dom  dom?
+    0.005     250    0.00999    0.01316   0.759   0.00513       19   yes
+    0.005     500    0.00715    0.00931   0.768   0.00272       21   yes
+    0.005    1000    0.00513    0.00658   0.780   0.00141       23   yes
+    0.005    2000    0.00361    0.00465   0.776   0.00075       26   yes
+    0.005    4000    0.00271    0.00329   0.823   0.00038       27   yes
+    0.020     250    0.01997    0.02632   0.759   0.01026       19   yes
+    0.020     500    0.01430    0.01861   0.768   0.00544       21   yes
+    0.020    1000    0.01026    0.01316   0.780   0.00281       23   yes
+    0.020    2000    0.00722    0.00931   0.776   0.00149       26   yes
+    0.020    4000    0.00541    0.00658   0.823   0.00076       27   yes
+    0.050     250    0.03158    0.04162   0.759   0.01623       19   yes
+    0.050     500    0.02261    0.02943   0.768   0.00860       21   yes
+    0.050    1000    0.01622    0.02081   0.780   0.00445       23   yes
+    0.050    2000    0.01141    0.01471   0.776   0.00236       26   yes
+    0.050    4000    0.00856    0.01040   0.823   0.00120       27   yes
+    0.100     250    0.04466    0.05885   0.759   0.02295       19   yes
+    0.100     500    0.03197    0.04162   0.768   0.01216       21   yes
+    0.100    1000    0.02294    0.02943   0.780   0.00629       23   yes
+    0.100    2000    0.01614    0.02081   0.776   0.00333       26   yes
+    0.100    4000    0.01211    0.01471   0.823   0.00170       27   yes
+    0.200     250    0.06316    0.08323   0.759   0.03246       19   yes
+    0.200     500    0.04521    0.05885   0.768   0.01720       21   yes
+    0.200    1000    0.03245    0.04162   0.780   0.00890       23   yes
+    0.200    2000    0.02283    0.02943   0.776   0.00471       26   yes
+    0.200    4000    0.01712    0.02081   0.823   0.00240       27   yes
+
+  C_m all-N   (transparency) = 0.781   CoV = 0.028
+  C_m N>=2000 (FROZEN)    = 0.799   CoV = 0.030   PASS (target CoV < 0.20)
+  the ratio drifts UP ~8% with N: this IS the R1.5 sub-exp term (see `subexp`),
+  which inflates small-N eta_N; C_m is an asymptotic sqrt-regime constant, so it is
+  frozen from the large-N rows where the sub-exp term is 2-3 orders below sqrt.
+  R1.5 domination: 25/25 cells have N >= N_dom (sub-exp term dominated, absorbed into C_m). ALL PASS
+[FORWARD]  collapse: SDR(x) shares one curve across regimes  (x = |beta|/floor)                                                                                                                                    
+        regime     N     m   sig |  x_0.5  SDR@x=1                                                                                                                                                                 
+      noise-lo   500  0.00  0.05 |   0.25     1.00                                                                                                                                                                 
+      noise-hi  2000  0.00  0.05 |   0.25     1.00                                                                                                                                                                 
+      mismatch  1000  0.10  0.05 |   0.26     1.00                                                                                                                                                                 
+   mixed-noisy  1000  0.10  0.20 |   0.16     1.00                                                                                                                                                                 
+     mixed-big  4000  0.25  0.10 |   0.23     1.00                                                                                                                                                                 
+                                                                                                                                                                                                                   
+  shared crossing x_0.5 = 0.23   CoV = 0.162   PASS (target CoV < 0.25)                                                                                                                                            
+  x_0.5 < 1 is EXPECTED: the floor pays sqrt(2 log pK) for simultaneity and                                                                                                                                        
+  detection is sign-only; at x=1, SDR ~ 1 in every regime. The COLLAPSE is the claim.                                                                                                                              
+                                                                                                                                                                                                                   
+[BACKWARD]  budget rule -> one constant C_budget (m=0)                                                                                                                                                             
+   gamma    beta    N@90%  pred(C=1)  implied C regime                                                                                                                                                             
+    0.20   0.200      999        433      1.519 resolution                                                                                                                                                         
+    0.14   0.140     1793        884      1.424 resolution
+    0.10   0.100     3725       1732      1.467 resolution
+    0.07   0.070     7741       3535      1.480 resolution
+
+  C_budget (resolution rows) = 1.472   CoV = 0.023   PASS (target CoV < 0.30)
+  feasibility floor pK = 31; FEASIBILITY rows sit near it and do NOT
+  test the 1/gamma^2 law. This C_budget is the frozen backward constant.
+
+d-SWEEP STABILITY of the FROZEN constants C_m, C_budget (R1.4)
+  Cest is per-run (it grows with d); here we check that the two
+  constants we DO freeze at d=30 are in fact d-stable.
+========================================================================
+     d    pK  C_m (frozen)   C_budget  Cest_emp
+    15    16         0.781      1.587     1.439
+^[[B^[[B^[[B^[[B^[[B^[[B    24    25         0.760      1.494     1.678
+
+
+    30    31         0.799      1.472     1.768
+    49    50         0.839      1.479     2.256
+  ----------------------------------------------
+  MEAN               0.795      1.508     1.785   <- frozen = mean over d
+  cross-d CoV: C_m 0.042  C_bud 0.035  C_est 0.192
+
+  FROZEN VALUES (mean over d, carried into CONSTANTS):
+    C_M     = 0.795  (cross-d CoV 0.042 STABLE)
+    C_BUDGET= 1.508  (cross-d CoV 0.035 STABLE)
+    C_est is NOT frozen: cross-d CoV 0.192 (rises 1.44 -> 2.26); measured per run.
+
+  We freeze the MEAN over d, not any single d's value: it would be
+  inconsistent to claim d-stability and then cherry-pick one d. The
+  low cross-d CoV is what licenses a single frozen scalar for C_m,
+  C_budget; the high CoV for C_est is why it is re-measured per run.
+
+[regime grid] five regimes span the two axes of sigma_eff:
+      noise-lo: sigma_obs=0.05 m=0.00 -> sigma_eff=0.050
+      noise-hi: sigma_obs=0.05 m=0.00 -> sigma_eff=0.050
+      mismatch: sigma_obs=0.05 m=0.10 -> sigma_eff=0.301
+   mixed-noisy: sigma_obs=0.20 m=0.10 -> sigma_eff=0.451
+     mixed-big: sigma_obs=0.10 m=0.25 -> sigma_eff=0.497
+
+========================================================================
+TIER 1 CALIBRATION (frozen and carried into Tiers 2-3)
+========================================================================
+    constant    value   role (values are MEAN OVER d, not d=30)
+         C_M    0.795   planning/pilot only (NOT in certified floor)
+     C_FLOOR    1.000   orthonormal ideal only; floor uses per-run C_est
+    C_BUDGET    1.508   budget rule (backward), Eq. 8
+
+  forward collapse point x_0.5 = 0.23 (a point on the shared SDR curve)
+  NOTE: C_FLOOR theory=1 vs empirical>=1 is EXPECTED -- the bound is an upper
+  bound under finite N, query noise, and mismatch. Not an anomaly.

@@ -58,8 +58,8 @@ class Constants:
     UCB is used, DELTA_SPLIT_UCB=4 also budgets the pilot event.
     """
     C_FLOOR: float = 1.0
-    C_M: float = 0.830
-    C_BUDGET: float = 1.552
+    C_M: float = 0.795
+    C_BUDGET: float = 1.508
     P_KEEP: float = 0.5
     Z_ALPHA: float = 1.96
     DELTA_SPLIT: int = 3

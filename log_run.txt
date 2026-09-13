@@ -352,3 +352,31 @@ FLOOR vs BOOTSTRAP vs WALD  (Image K=1, shared bank N=2000, B=200)
        deterministic mismatch -- the bootstrap spread captures sampling of the
        masks, NOT the mismatch bias, and so also cannot see the deterministic
        mismatch the fair Wald absorbs through its residual variance.
+
+
+       python tier3_feasibility.py
+========================================================================
+TIER 3 -- FEASIBILITY (Reading 2): why K=2 costs more, less noise
+========================================================================
+  d=18, n_active=4, m_resid=0.05, sigma_obs=0.05, beta_min=0.02
+  C_budget=1.552 (frozen from Tier 1)
+
+    K     pK  sigma_eff     N_res   N_feas     N_run       binds
+    1     19     0.2472      5142       57      5142  resolution
+    2    172     0.2264      7037      516      7037  resolution
+
+  READING:
+    sigma_eff FALLS K=1 -> K=2 : 0.2472 -> 0.2264 (pairwise moves from mismatch into the fit)
+    pK JUMPS  19 -> 172  (~ d^2/2), lifting the feasibility floor
+    => running budget RISES 5142 -> 7037 DESPITE lower noise.
+    The certificate draws the identifiability line: if budget << p2=172,
+    dense pairwise LIME is not identifiable and must not be read as an interaction map.
+
+  [figure data] feasibility floor vs resolution budget across d (K=2)
+     d      p2  sigma_eff     N_res   N_feas       binds
+     8      37     0.2147      4618      111  resolution
+    12      79     0.2433      7015      237  resolution
+    16     137     0.2272      6798      411  resolution
+    20     211     0.2244      7160      633  resolution
+    24     301     0.2189      7224      903  resolution
+    30     466     0.2164      7547     1398  resolution
