@@ -102,3 +102,126 @@ TIER 1 CALIBRATION (frozen and carried into Tiers 2-3)
   forward collapse point x_0.5 = 0.23 (a point on the shared SDR curve)
   NOTE: C_FLOOR theory=1 vs empirical>=1 is EXPECTED -- the bound is an upper
   bound under finite N, query noise, and mismatch. Not an anomaly.
+
+
+
+python tier1b_cert_transfer.py all 
+
+[Q1 MECHANISM]  Cest = max{gamma^-1/2, |||Ginv|||_inf} grows with pK at fixed N=4000                                                                                                                               
+  (if it did not rise with pK there would be nothing to transfer)                                                                                                                                                  
+                                                                                                                                                                                                                   
+     d   K     pK    pK/N    gamma     Cinv     Cest                                                                                                                                                               
+    20   1     21   0.005   0.8775   1.3560   1.3560                                                                                                                                                               
+    30   1     31   0.008   0.8464   1.5146   1.5146                                                                                                                                                               
+    40   1     41   0.010   0.8205   1.6721   1.6721                                                                                                                                                               
+    49   1     50   0.013   0.8019   1.8259   1.8259                                                                                                                                                               
+    60   1     61   0.015   0.7790   1.9858   1.9858                                                                                                                                                               
+    80   1     81   0.020   0.7425   2.3094   2.3094                                                                                                                                                               
+                                                                                                                                                                                                                   
+    10   2     56   0.014   0.7710   1.8883   1.8883                                                                                                                                                               
+    14   2    106   0.026   0.6962   2.7087   2.7087                                                                                                                                                               
+    18   2    172   0.043   0.6269   3.7899   3.7899                                                                                                                                                               
+    22   2    254   0.064   0.5572   5.1940   5.1940                                                                                                                                                               
+                                                                                                                                                                                                                   
+  READING: Cinv (a max abs row sum of Ginv) and hence Cest rise with pK at fixed N,                                                                                                                                
+  exactly as the referee notes. The question is whether they are stable in pK/N (Q2).                                                                                                                              
+                                                                           
+                                                                           [Q2 TRANSFER]  Cest_emp vs the ratio pK/N across different (d,K)                                                                                                                                                   
+  claim under test: Cest is a function of pK/N, so a value calibrated                                    
+  at one (d,K) transfers to another AT THE SAME RATIO.                                                   
+
+     d   K     pK       N    pK/N    gamma     Cinv     Cest                                             
+    30   1     31    1550   0.020   0.7591   1.8521   1.8521                                             
+    30   1     31     620   0.050   0.6343   2.4373   2.4373                                             
+    30   1     31     310   0.100   0.5076   3.2939   3.2939                                             
+    30   1     31     155   0.200   0.3472   5.0866   5.0866                                             
+    30   1     31      89   0.348   0.2074   9.2399   9.2399                                             
+    30   1     31      62   0.500   0.1103  17.3777  17.3777                                             
+    49   1     50    2500   0.020   0.7496   2.0323   2.0323                                             
+    49   1     50    1000   0.050   0.6223   2.7778   2.7778                                             
+    49   1     50     500   0.100   0.4986   3.8134   3.8134                                             
+    49   1     50     250   0.200   0.3306   5.9972   5.9972                                             
+    49   1     50     143   0.350   0.1937  10.9782  10.9782                                             
+    49   1     50     100   0.500   0.1054  19.6786  19.6786                                             
+    14   2    106    5300   0.020   0.7362   2.4200   2.4200                                             
+    14   2    106    2120   0.050   0.5959   3.4940   3.4940                                             
+    14   2    106    1060   0.100   0.4615   4.9393   4.9393                                             
+    14   2    106     530   0.200   0.3049   8.0017   8.0017                                             
+    14   2    106     303   0.350   0.1619  15.4504  15.4504                                             
+    14   2    106     212   0.500   0.0834  29.7263  29.7263                                             
+    18   2    172    8600   0.020   0.7348   2.8054   2.8054                                             
+    18   2    172    3440   0.050   0.6014   4.0115   4.0115                                             
+    18   2    172    1720   0.100   0.4628   5.7862   5.7862                                             
+    18   2    172     860   0.200   0.3046   9.5378   9.5378                                             
+    18   2    172     491   0.350   0.1679  17.9693  17.9693                                             
+    18   2    172     344   0.500   0.0851  33.9087  33.9087                                             
+    22   2    254   12700   0.020   0.7350   3.1333   3.1333                                             
+    22   2    254    5080   0.050   0.6014   4.5785   4.5785                                             
+    22   2    254    2540   0.100   0.4692   6.5921   6.5921                                             
+    22   2    254    1270   0.200   0.3060  10.9643  10.9643                                             
+    22   2    254     726   0.350   0.1649  20.6476  20.6476                                             
+    22   2    254     508   0.500   0.0872  37.7660  37.7660   
+     [collapse test]  within each pK/N bin: spread of Cest across the different (d,K) members
+     pK/N  members  Cest_min  Cest_max  spread%    verdict                                               
+     0.02        5    1.8521    3.1333    40.9%      SPLIT                                               
+     0.05        5    2.4373    4.5785    46.8%      SPLIT                                               
+     0.10        5    3.2939    6.5921    50.0%      SPLIT                                               
+     0.20        5    5.0866   10.9643    53.6%      SPLIT                                               
+     0.35        5    9.2399   20.6476    55.2%      SPLIT                                               
+     0.50        5   17.3777   37.7660    54.0%      SPLIT                                               
+
+  VERDICT: Cest does NOT collapse in pK/N (max within-bin spread 55.2% >= 15%).                          
+  A single frozen scalar does not transfer; index Cest by pK/N or recompute it                           
+  per run (it is a pure design quantity, Assumption 1, and cheap to measure).                            
+
+[Q3 OPERATING POINT]  forward-floor constant Cest_emp at the deployed (d,K,N) vs frozen C_FLOOR
+  frozen C_FLOOR = 1.0 (orthonormal ideal). Eq. 6's own constant is Cest = max{gamma^-1/2, |||Ginv|||_inf}.
+  gap = Cest_emp / C_FLOOR is the factor by which a floor computed at C_FLOOR under-states the
+  true design radius at that point (>1 => forward floor is anti-conservative there).
+
+                   point     pK       N    pK/N  Cest_emp   gap x  floor honest?                         
+   calibration  d=30 K=1     31     500   0.062    2.6451    2.65     NO (x2.65)                         
+   calibration  d=30 K=1     31    1000   0.031    2.0684    2.07     NO (x2.07)                         
+   calibration  d=30 K=1     31    2000   0.015    1.7347    1.73     NO (x1.73)                         
+   calibration  d=30 K=1     31    4000   0.008    1.5090    1.51     NO (x1.51)                         
+
+   image        d=49 K=1     50     512   0.098    3.7917    3.79     NO (x3.79)                         
+   image        d=49 K=1     50    1000   0.050    2.7662    2.77     NO (x2.77)                         
+   image        d=49 K=1     50    2000   0.025    2.1941    2.19     NO (x2.19)                         
+   image        d=49 K=1     50    4000   0.013    1.8203    1.82     NO (x1.82)                         
+
+   enum (short) d=13 K=2     92    2000   0.046    3.1980    3.20     NO (x3.20)                         
+   enum (short) d=13 K=2     92    4000   0.023    2.4667    2.47     NO (x2.47)                         
+   enum (short) d=13 K=2     92    8192   0.011    1.9917    1.99     NO (x1.99)                         
+
+   enum (mid)   d=18 K=2    172    4000   0.043    3.7729    3.77     NO (x3.77)                         
+   enum (mid)   d=18 K=2    172    8000   0.021    2.8739    2.87     NO (x2.87)                         
+   enum (mid)   d=18 K=2    172   16000   0.011    2.2841    2.28     NO (x2.28)        
+
+
+  READING (R1.4 verdict on the forward floor):                                                           
+    Cest_emp > 1 at every deployed point, so a forward floor computed with C_FLOOR = 1.0 is
+    NOT a strict upper bound -- it under-states the true simultaneous radius by the `gap x`
+    factor. To make the forward guarantee hold as stated, freeze C_FLOOR to the measured Cest_emp
+    at the deployed pK/N band (the max `gap x` per point below), or recompute Cest per run
+    (cheap; pure design). This is the concrete fix R1.4 asks for; the transfer is then honest
+    BECAUSE C_FLOOR tracks Cest(pK/N) rather than being pinned at the orthonormal ideal.
+
+  max gap per deployed point (candidate C_FLOOR to freeze):                                              
+     calibration  d=30 K=1 : C_FLOOR >= 2.645                                                            
+     image        d=49 K=1 : C_FLOOR >= 3.792                                                            
+     enum (short) d=13 K=2 : C_FLOOR >= 3.198                                                            
+     enum (mid)   d=18 K=2 : C_FLOOR >= 3.773                                                            
+
+========================================================================                                 
+SUMMARY (R1.4): Q1 shows Cest grows with pK (concern is real);                                           
+Q2 tests whether it collapses in pK/N (transfer axis); Q3 checks                                         
+the frozen C_FLOOR against the actually deployed points.             
+
+
+
+
+
+python tier2_blackbox.py image --beta_min 0.05 --N_ladder 512,1000,2000,4000 \
+    --backbones resnet50,resnet18,vit_b_16 --references white,black,mean \
+    --images_dir image_samples --glob "*.JPEG"
