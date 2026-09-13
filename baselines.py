@@ -5,11 +5,12 @@ Compare the detection FLOOR against the two other finite-budget ways to make a
 per-coordinate trust decision, on the SAME fitted dense OLS and the SAME mask
 bank, so they differ ONLY in the certification criterion:
 
-  FLOOR      : certify S iff |beta_S| > floor(N,rho)
-               = C_floor * sigma_eff * sqrt(2 log pK / N).
+  FLOOR      : certify S iff |beta_S| > floor(N,rho), using the realized
+               C_est(Z), query-noise term, and both Bernstein mismatch terms,
+               with L = log(2 * nu * pK / delta).
                One fit, one simultaneous threshold for all pK coordinates;
-               carries the multiplicity correction in closed form; uniquely
-               invertible to a query budget (Eq. 8).
+               Eq. 8 is a separate calibrated backward-planning rule, not an
+               algebraic inverse of the full two-term floor.
   BOOTSTRAP  : resample the N mask-response pairs with replacement, refit B
                times, certify S iff its percentile CI excludes 0.
                B fits, one interval per coordinate, no simultaneity correction.
@@ -20,8 +21,8 @@ bank, so they differ ONLY in the certification criterion:
                degeneracy is exactly what the mismatch term C_m sqrt(m) of
                sigma_eff repairs.
 
-We do NOT claim the floor certifies more coordinates; we show it reaches the
-same decisions while being simultaneous, closed-form, and budget-invertible.
+We do NOT claim the floor certifies more coordinates; the comparison isolates
+how the simultaneous certified floor differs from coordinate-wise alternatives.
 A sequential stopping rule (e.g. S-LIME) is deliberately excluded: it answers a
 different question (how many perturbations before a SELECTED support stabilizes)
 and is complementary to a fixed-budget sign-certificate, not an alternative.

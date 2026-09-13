@@ -272,7 +272,7 @@ def forward_backward_on_probe(probe: Probe, N_list, beta_min, K, seed=0):
 
     # FORWARD: prefix-nested bank, single-budget theorem at each rung.
     # Report point 1/2: pass the mismatch breakdown so each rung's floor is the
-    # honest TWO-TERM certified floor (sigma_obs, m_hat, B) rather than the
+    # revised TWO-TERM certified floor (sigma_obs, m_hat, B) rather than the
     # absorbed single-scalar sigma_eff.
     N_max = max(N_list)
     rng = np.random.default_rng(seed + 777)
@@ -282,7 +282,7 @@ def forward_backward_on_probe(probe: Probe, N_list, beta_min, K, seed=0):
                                    sigma_obs=probe.sigma_obs, m_hat=est.m_hat,
                                    B=B_floor)
 
-    # BACKWARD: predict N with the empirical planning constant, report the honest
+    # BACKWARD: predict N with the empirical planning constant, report the revised
     # two-term realized floor.
     plan = bl.plan_budget(
         s_eff, beta_min, probe.d, K,

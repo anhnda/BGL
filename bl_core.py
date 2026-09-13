@@ -13,7 +13,7 @@ CERTIFICATE (Theorem 1):
         + sqrt(2 m_ub L / N)
         + (2/3) B_pop_ub L / N
     ],
-    L = log(nu * pK / delta).
+    L = log(2 * nu * pK / delta).
 
 C_est is recomputed from the realized augmented Walsh Gram for every run.
 C_m and C_budget NEVER enter a certified forward decision.
@@ -93,23 +93,24 @@ def log_pk_over_delta(d: int, K: int = 1, delta: float = None,
                       split: int = None) -> float:
     """R1.2 -- the union-bounded log factor that the floor carries.
 
-    Theorem 1's proof is a union bound over `split` failure events, so the honest
-    per-event level is delta/split and the concentration log is
+    Theorem 1's proof allocates delta across `split` failure events, so the
+    per-event level is delta/split.  The coordinate maxima are two-sided, hence
+    the concentration log is
 
-        log( split * pK / delta ).
+        log( 2 * split * pK / delta ).
 
     The experiments use delta = 1/pK (the paper's choice), giving
 
-        log( split * pK^2 )  =  2 log pK + log split,
+        log( 2 * split * pK^2 ) = 2 log pK + log(2 * split).
 
-    which recovers the old `2 log pK` PLUS the bounded correction `log split`.
-    Passing split=1 and delta=1/pK reproduces the pre-revision factor exactly, so
-    the change is auditable against the old numbers.
+    The factor 2 inside the logarithm accounts for the two tails.  It is distinct
+    from the factor 2 in sqrt(2 L / N), which comes from the Chernoff/Bernstein
+    exponent and must remain in the radius.
     """
     pk = p_K(d, K)
     delta = (1.0 / pk) if delta is None else delta
     split = CONSTANTS.DELTA_SPLIT if split is None else split
-    return math.log(split * pk / delta)
+    return math.log(2.0 * split * pk / delta)
 
 
 def feature_subsets(d: int, K: int):
@@ -438,13 +439,13 @@ def leakage_domination_N(m: float, B: float, d: int, K: int = 1,
 def floor_value(s_eff: float, d: int, N: int, K: int = 1,
                 family_wise: bool = True, C_floor: float = None,
                 delta: float = None, split: int = None) -> float:
-    """floor(N, rho) = C_floor * sigma_eff * sqrt(2 log(SPLIT*pK/delta) / N)
+    """floor(N, rho) = C_floor * sigma_eff * sqrt(2 log(2*SPLIT*pK/delta) / N)
     (family-wise), or the single pre-registered-coordinate variant with
     z_{1-alpha}.
 
-    R1.2: the log factor is now the union-bounded log_pk_over_delta(), so the
-    floor honestly reflects that the proof spends delta over several events. With
-    delta = 1/pK and split = 1 this reduces to the pre-revision sqrt(2 log pK/N).
+    R1.2: the log factor is the two-sided union-bounded log_pk_over_delta().
+    With delta = 1/pK and split = 1, L = 2 log pK + log 2 and the radius is
+    sqrt(2 L / N); the outer factor 2 under the square root is not removed.
 
     DEPRECATED FOR CERTIFICATION.  This single-term form folds the whole leakage
     into  C_floor * C_m sqrt(m) * sqrt(2 L / N)  via sigma_eff, which is only an
@@ -453,7 +454,7 @@ def floor_value(s_eff: float, d: int, N: int, K: int = 1,
     the two Bernstein terms explicitly.  This function is retained for the
     BACKWARD budget rule and for the synthetic collapse curves, where sigma_eff
     with the calibrated C_m is the intended planning quantity, and for the
-    split=1 audit reproduction of the pre-revision numbers.
+    legacy planning/synthetic diagnostics where this single-term form is intended.
     """
     C_floor = CONSTANTS.C_FLOOR if C_floor is None else C_floor
     if family_wise:
@@ -472,7 +473,7 @@ def certified_floor(C_est: float, sigma_obs: float, m_hat: float, B: float,
         + sqrt(2 m L / N)
         + (2/3) B L / N
     ],
-    L = log(split * pK / delta).
+    L = log(2 * split * pK / delta).
 
     ``sigma_obs``, ``m_hat`` and ``B`` are interpreted as VALID UPPER BOUNDS
     for the query-noise sub-Gaussian scale, mismatch energy, and population
@@ -531,7 +532,7 @@ def predict_budget(s_eff: float, beta_min: float, d: int, K: int = 1,
     """Calibrated leading-order backward PLANNING rule.
 
         N_pred = ceil( C_budget^2 * sigma_eff_plan^2
-                       * 2 log(split*pK/delta) / beta_min^2 )
+                       * 2 log(2*split*pK/delta) / beta_min^2 )
 
     This is not the algebraic inverse of the certified two-term floor: it omits
     the lower-order B/N term and cannot know the realized C_est before a design
