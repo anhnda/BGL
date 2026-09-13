@@ -42,7 +42,7 @@ constructed only inside a driver's `main()` after arguments are supplied.
 | `bl_core.py` | no | The shared numerical core. Degree-`K` Walsh feature machinery (`p_K`, `feature_subsets`, `design_matrix`, `standardize_columns`, `sample_masks`), dense OLS (`ols_fit`), the floor (`sigma_eff`, `floor_value`, `certified_set`), the budget rule (`predict_budget`, `feasibility_floor`, `plan_budget`), pilot estimation of `sigma_eff` (`estimate_mismatch_from_residual`, `pilot_N0`), and the prefix-ladder diagnostic (`sweep_prefix_ladder`). The frozen planning constants (`C_M`, `C_BUDGET`) plus the per-run `C_est` live here in `CONSTANTS` and are frozen after Tier-1 calibration. |
 | `bl_models.py` | **yes** | The only Torch code. Two query-only black boxes: `TextClassifier` (sentence + token mask → class probability, `σ_obs > 0`) and `ImageClassifier` (image + cell mask → class logit, `σ_obs ≈ 0`). These map `(input, binary mask) → model output` and nothing else; all certification math is in `bl_core.py`. |
 | `tier1_synthetic.py` | no | **Tier 1 — synthetic, ground truth known.** Calibrates the two constants and proves the two-direction collapse: leakage linchpin (fixes `C_M`), forward SDR-collapse curve, backward budget-constant recovery (fixes `C_BUDGET`), and the regime grid spanning the two axes of `σ_eff`. This is the *only* place constants are fit. |
-| `tier1b_cest_transfer.py` | no | **Tier 1b — Cest transfer study (referee R1.4).** Design-only (no model): measures the forward floor constant `Cest = max{γ^{-1/2}, ‖Σ̂⁻¹‖∞}` as a function of the coordinate-to-budget ratio `pK/N`. Three questions: (Q1) confirms Cest grows with `pK` at fixed `N` (the referee's premise); (Q2) tests whether Cest **collapses onto one curve in `pK/N`** across very different `(d, K)` — the condition under which a frozen value transfers; (Q3) evaluates Cest at the actually deployed points (`d=30`/`K=1`, `d=49`/`K=1`, `K=2` enumeration) and reports the gap against the frozen `C_FLOOR`. |
+| `tier1b_cert_transfer.py` | no | **Tier 1b — Cest transfer study (referee R1.4).** Design-only (no model): measures the forward floor constant `Cest = max{γ^{-1/2}, ‖Σ̂⁻¹‖∞}` as a function of the coordinate-to-budget ratio `pK/N`. Three questions: (Q1) confirms Cest grows with `pK` at fixed `N` (the referee's premise); (Q2) tests whether Cest **collapses onto one curve in `pK/N`** across very different `(d, K)` — the condition under which a frozen value transfers; (Q3) evaluates Cest at the actually deployed points (`d=30`/`K=1`, `d=49`/`K=1`, `K=2` enumeration) and reports the gap against the frozen `C_FLOOR`. |
 | `tier2_blackbox.py` | yes | **Tier 2 — black-box classifiers.** With constants frozen, tests the guarantee on real query-only models: forward sign-flip stability over a prefix-nested budget ladder, backward budget planning, and the **exact-β sign-correctness check** (enumerate the full `2^d` mask cube for short inputs, `d ≤ 13`, to recover the exact projection and directly verify signs). |
 | `tier2b_reseed.py` | yes | **Tier 2b — independent-reseeding audit.** Breaks the shared-mask coupling of the nested ladder: at a single fixed `N`, runs `R` independent seeds to measure (A) the cross-seed sign-violation rate vs the `1/pK` target and (B) the stratified Jaccard stability of the certified set above vs inside the unresolved band. Includes a `selftest` mode (pure NumPy, no models). |
 | `tier3_feasibility.py` | no | **Tier 3 — feasibility (Reading 2).** Shows why `K=2` costs *more* despite *lower* noise: moving pairwise structure into the fit lowers `σ_eff`, but `pK` jumps `~ d²/2`, lifting the feasibility floor `~ pK`. Produces the resolution-budget vs feasibility-floor crossing curves. |
@@ -52,9 +52,9 @@ constructed only inside a driver's `main()` after arguments are supplied.
 
 | Constant | Default | Role |
 |----------|---------|------|
-| `C_M` | `0.830` (mean over d∈{15,24,30,49}, frozen from Tier-1 large-N rows, N ≥ 2000) | **Empirical planning/calibration quantity only — NOT a certificate constant.** The certified floor now carries the two Bernstein leakage terms explicitly (`√(2mL/N)+(2/3)BL/N`), so `C_M` no longer sets any certified radius; it enters only the backward budget rule (`predict_budget`) and pilot reporting. Was absorbed into `σ_eff` pre-fix, which under-covered the leading term since 0.830<1. |
+| `C_M` | `0.795` (mean over d∈{15,24,30,49}, frozen from Tier-1 large-N rows, N ≥ 2000) | **Empirical planning/calibration quantity only — NOT a certificate constant.** The certified floor now carries the two Bernstein leakage terms explicitly (`√(2mL/N)+(2/3)BL/N`), so `C_M` no longer sets any certified radius; it enters only the backward budget rule (`predict_budget`) and pilot reporting. Was absorbed into `σ_eff` pre-fix, which under-covered the leading term since 0.795<1. |
 | `C_FLOOR` | `1.0` | Floor-bound constant (forward); theory = 1 for the orthonormal ±1 design, empirical ≥ 1 expected. |
-| `C_BUDGET` | `1.552` (mean over d∈{15,24,30,49}) | Budget-rule constant (backward), back-solved at Tier 1 under the split log factor (R1.2). Re-calibrate after any floor/estimator change. |
+| `C_BUDGET` | `1.508` (mean over d∈{15,24,30,49}) | Budget-rule constant (backward), back-solved at Tier 1 under the split log factor (R1.2). Re-calibrate after any floor/estimator change. |
 
 `C_FLOOR` (the bound) and `C_BUDGET` (the budget invert) are deliberately kept as
 separate objects: inverting the budget with `C_FLOOR` lands below the feasibility
@@ -125,12 +125,12 @@ call the floor with `split=1`:
 The referee's most serious point was that `Cest = max{γ^{-1/2}, ‖Σ̂⁻¹‖∞}` — the
 constant in the forward floor (Eq. 6) — is a max absolute row sum of the inverse
 Gram that grows with `pK`, yet was calibrated at `(d=30, K=1)` and frozen for
-`d=49` and `K=2`. The Tier-1b study (`tier1b_cest_transfer.py`) settles it
+`d=49` and `K=2`. The Tier-1b study (`tier1b_cert_transfer.py`) settles it
 empirically:
 
 * **Q1** confirms `Cest` grows with `pK` at fixed `N` (the concern is real).
 * **Q2** shows `Cest` does **not** collapse onto one curve in `pK/N`: at a fixed
-  ratio it still splits by `pK` (40–58% within-bin spread across `(d, K)`), so
+  ratio it still splits by `pK` (40–55% within-bin spread across `(d, K)`), so
   no single frozen scalar is correct.
 * **Q3** measures the empirical `Cest` at the deployed points: **1.5–3.8×**, not
   the frozen `C_FLOOR = 1.0`. A forward floor computed at `C_FLOOR = 1.0` is
@@ -163,7 +163,7 @@ reported.
 
 * **Two-term certified floor.** The floor no longer folds the leakage into
   `C_m√m · sqrt(2L/N)` (which only upper-bounds the leading Lemma-1 term when
-  `C_m ≥ 1`, whereas the calibrated `C_m = 0.830 < 1`). `certified_floor` /
+  `C_m ≥ 1`, whereas the calibrated `C_m = 0.795 < 1`). `certified_floor` /
   `floor_from_design(..., sigma_obs, m_hat, B)` carry
   `C_est·[σ_obs√(2L/N) + √(2mL/N) + (2/3)BL/N]`. The `B/N` sub-exponential term
   is carried at all `N`, so no "dominated throughout `N ≳ pK`" assumption is
@@ -192,11 +192,13 @@ reported.
   probability output does not by itself make `σ_obs > 0`. Genuine query-noise
   regimes are the synthetic tier (or deliberately stochastic inference).
 
-> **Re-calibration required.** Because the floor and the estimator changed, run
-> `python tier1_synthetic.py all` under this code, read the new `C_M`, `C_BUDGET`
-> and the `C_est` d-sweep, and update `bl_core.Constants` before regenerating
-> Tier 2 / 2b / 3 / baselines. The values currently in `Constants` are the
-> pre-fix numbers and are placeholders until that run.
+> **Re-calibration required.** Because the floor and the estimator changed, the
+> two planning constants were re-calibrated by running `python tier1_synthetic.py all`
+> under this code and reading the new `C_M`, `C_BUDGET` and the `C_est` d-sweep.
+> The values now in `bl_core.Constants` (`C_M = 0.795`, `C_BUDGET = 1.508`, mean
+> over d∈{15,24,30,49}) are those re-calibrated numbers; re-run Tier 1 and update
+> `Constants` again after any further floor/estimator change before regenerating
+> Tier 2 / 2b / 3 / baselines.
 
 ---
 
@@ -250,10 +252,10 @@ python tier3_feasibility.py
 python tier2b_reseed.py selftest
 ```
 
-`python tier1_synthetic.py leakage` reproduces `C_m ≈ 0.83` (revised Table 2,
+`python tier1_synthetic.py leakage` reproduces `C_m ≈ 0.80` (revised Table 2,
 frozen from the large-N rows under the R1.2 split normalizer; the all-N mean
-0.81 is printed alongside for transparency, and the small-N drift is the R1.5
-sub-exp term). The full `all` run also recovers `C_budget ≈ 1.55`.
+0.78 is printed alongside for transparency, and the small-N drift is the R1.5
+sub-exp term). The full `all` run also recovers `C_budget ≈ 1.51`.
 
 ### 2. Black-box, using the default model
 
