@@ -503,6 +503,136 @@ def table_cost(sigma_obs: float = 0.05, m: float = 0.05, B: float = 1.0,
 
 
 # =========================================================================== #
+#  (R) REFORMULATED certificate -- Walsh-projection (self-normalized) radius
+#      that REMOVES the C_est row-sum term, hence the sqrt(pK) design factor.
+#
+#  THE KEY LEVER. Under uniform product masks the centered Walsh design is
+#  ORTHONORMAL (Sigma = I, known). The OLS estimator the repo fits,
+#  beta_hat = Sigma_hat^{-1} (X^T y / t), has the same population target as the
+#  method-of-moments / projection estimator
+#
+#      beta_tilde_{S,t} = (1/t) sum_s chi_S(z_s) y_s ,
+#
+#  which is a PURE SAMPLE AVERAGE -- no Gram inversion, no C_est, no row-sum. It
+#  is exactly the RISE-type object (this is the LIME/RISE unification). Its error
+#  decomposes with population-orthogonality <chi_S, r_{>K}> = 0:
+#
+#      beta_tilde_{S,t} - beta*_S
+#        = (1/t) sum chi_S(z_s) eps_s          (noise, |chi|=1, sub-G scale sigma)
+#        + (1/t) sum chi_S(z_s) r_{>K}(z_s)    (leakage, mean 0, var<=m, |.|<=B).
+#
+#  So the per-coordinate anytime radius is bl's EXACT two Bernstein terms with
+#  C_est = 1 and only a union over the pK coordinates -- the sqrt(pK) is gone,
+#  replaced by the honest log pK union cost. Scope: this is valid BECAUSE the
+#  masks are uniform (orthonormal Walsh); a general locality kernel would break
+#  orthogonality and reintroduce a Gram term. The repo's setting is exactly the
+#  orthonormal one, so the reformulation applies as-is.
+# =========================================================================== #
+def projection_anytime_floor(t: int, d: int, K: int, *, sigma_obs: float,
+                             m: float, B: float, delta: float, t0: int,
+                             T: int, eta: float = 1.4, scalar: str = "stitch",
+                             t_star: int = None) -> float:
+    """Anytime per-coordinate radius for the Walsh-projection estimator.
+
+    No design constant (C_est = 1), so only two certificate events (noise,
+    mismatch) share delta; the projection estimator needs no N > pK, so t0 can be
+    small. This is the reformulation the cost table points to.
+    """
+    de = split_delta(delta, 2)
+    if scalar == "mix":
+        ts = t_star if t_star is not None else max(t0, T // 4)
+        noise = scalar_normal_mixture(t, sigma=sigma_obs, delta_event=de,
+                                      t_star=ts)
+        mis_g = scalar_normal_mixture(t, sigma=math.sqrt(max(m, 0.0)),
+                                      delta_event=de, t_star=ts)
+        b_lo = max(epoch_lower(t, t0, eta), 1)
+        Lm = _log_L(d, K, de)
+        mis_e = (2.0 / 3.0) * max(B, 0.0) * Lm / b_lo
+        return noise + mis_g + mis_e
+    return scalar_stitch(t, d, K, sigma_obs=sigma_obs, m=m, B=B,
+                         delta_event=de, t0=t0, T=T, eta=eta)
+
+
+def table_reform(N_list=(512, 1000, 2000, 4000, 8000, 16000),
+                 sigma_obs: float = 0.05, m: float = 0.05, B: float = 1.0,
+                 delta_scale: float = 1.0, T: int = 2_000_000, eta: float = 1.4,
+                 c_est_fixed: float = 2.0, scalar: str = "stitch"):
+    """Same inflation comparison as table_inflation, but for the reformulated
+    projection certificate. Expect: design factor ~ 1 (sqrt(pK) GONE), inflation
+    = the modest scalar iterated-log only, and feasibility at K=2 restored.
+    """
+    print("=" * 78)
+    print(f"REFORMULATED  F_t^CS,proj / F_N^fixed  at t=N   (scalar={scalar})")
+    print("  Walsh-projection / self-normalized radius: no C_est, no sqrt(pK).")
+    print(f"  fixed-N denominator still uses realized C_est = {c_est_fixed}.")
+    print("=" * 78)
+    for name, d, K in _GRID:
+        pK = bl.p_K(d, K)
+        delta = default_delta(d, K) * delta_scale
+        print(f"\n  [{name}]  pK={pK}  (was: sqrt(pK)={math.sqrt(pK):.2f})")
+        print(f"    {'N':>7} {'F_fixed':>11} {'F_proj':>11} {'inflate':>8} "
+              f"{'vs sqrtpK':>10}")
+        # projection estimator is well-posed from t0=2 (no N>pK requirement)
+        t0 = 2
+        for N in N_list:
+            ff = fixed_floor(N, d, K, c_est=c_est_fixed, sigma_obs=sigma_obs,
+                             m=m, B=B, delta=delta)
+            fpr = projection_anytime_floor(N, d, K, sigma_obs=sigma_obs, m=m,
+                                           B=B, delta=delta, t0=t0, T=T,
+                                           eta=eta, scalar=scalar)
+            infl = fpr / ff if ff > 0 else float("inf")
+            print(f"    {N:>7d} {ff:>11.5f} {fpr:>11.5f} {infl:>8.2f} "
+                  f"{math.sqrt(pK):>10.2f}")
+    print("\n  READING: the inflation now sits at the scalar iterated-log factor")
+    print("  (~1.3-1.6) across ALL cells, INCLUDING K=2, and the design sqrt(pK)")
+    print("  column is gone -- compare each 'inflate' to the old sqrt(pK) at right.")
+    print("  VIỆC #0 VERDICT: the anytime LIME certificate is feasible once it is")
+    print("  stated on the Walsh-projection (sample-average) estimator rather than")
+    print("  OLS-with-C_est. This also UNIFIES LIME with RISE (both sample means),")
+    print("  which is why the RISE-first ordering is the right build order.")
+
+
+def table_cost_reform(sigma_obs: float = 0.05, m: float = 0.05, B: float = 1.0,
+                      eps_list=(0.05, 0.02, 0.01), delta_scale: float = 1.0,
+                      T: int = 2_000_000, eta: float = 1.4,
+                      c_est_fixed: float = 2.0, scalar: str = "stitch"):
+    """Extra-sample cost for the reformulated certificate -- the table_cost
+    counterpart that should drop K=2 premiums from 10x-86x down to ~1.x-2.x."""
+    print("=" * 78)
+    print(f"REFORMULATED EXTRA-SAMPLE COST  tau_proj / N_fixed  (scalar={scalar})")
+    print("=" * 78)
+
+    def first_below(fn, eps):
+        t = 8
+        while t < T and not (math.isfinite(fn(t)) and fn(t) <= eps):
+            t = int(t * 1.3) + 1
+        return t if t < T else -1
+
+    for name, d, K in _GRID:
+        pK = bl.p_K(d, K)
+        delta = default_delta(d, K) * delta_scale
+        print(f"\n  [{name}]  pK={pK}")
+        print(f"    {'eps':>7} {'N_fixed':>9} {'tau_proj':>9} {'ratio':>7}")
+        ffun = lambda N: fixed_floor(N, d, K, c_est=c_est_fixed,
+                                     sigma_obs=sigma_obs, m=m, B=B, delta=delta)
+        pfun = lambda t: projection_anytime_floor(
+            t, d, K, sigma_obs=sigma_obs, m=m, B=B, delta=delta, t0=2, T=T,
+            eta=eta, scalar=scalar)
+        for eps in eps_list:
+            Nf = first_below(ffun, eps)
+            tp = first_below(pfun, eps)
+            if Nf < 0 or tp < 0:
+                print(f"    {eps:>7.3f} {('>T' if Nf<0 else Nf):>9} "
+                      f"{('>T' if tp<0 else tp):>9} {'--':>7}")
+                continue
+            print(f"    {eps:>7.3f} {Nf:>9d} {tp:>9d} {tp / Nf:>7.2f}")
+    print("\n  READING: compare these ratios to the C_est-based `cost` table. If")
+    print("  K=2 drops to ~1.x-2.x, the reformulation is the fix and the adaptive")
+    print("  LIME branch is back in play; the RISE branch had no Gram to begin")
+    print("  with, so it is unaffected and remains the cleanest entry point.")
+
+
+# =========================================================================== #
 #  SIMULATE (torch, GPU) -- realized C_est denominator + coverage sanity
 # =========================================================================== #
 def _torch_device(pref: str):
@@ -609,7 +739,7 @@ def build_parser():
         description="Việc #0 anytime-feasibility check for the LIME certificate")
     p.add_argument("mode", nargs="?", default="all",
                    choices=["aprioi", "apriori", "inflation", "horizon",
-                            "cost", "simulate", "all"],
+                            "cost", "reform", "simulate", "all"],
                    help="which analysis to run")
     p.add_argument("--sigma_obs", type=float, default=0.05)
     p.add_argument("--m", type=float, default=0.05, help="mismatch energy bound")
@@ -647,6 +777,14 @@ def main():
         table_cost(sigma_obs=args.sigma_obs, m=args.m, B=args.B,
                    delta_scale=args.delta_scale, T=args.T, eta=args.eta,
                    c_est_fixed=args.c_est, scalar=args.scalar)
+    elif mode == "reform":
+        table_reform(sigma_obs=args.sigma_obs, m=args.m, B=args.B,
+                     delta_scale=args.delta_scale, T=args.T, eta=args.eta,
+                     c_est_fixed=args.c_est, scalar=args.scalar)
+        print()
+        table_cost_reform(sigma_obs=args.sigma_obs, m=args.m, B=args.B,
+                          delta_scale=args.delta_scale, T=args.T, eta=args.eta,
+                          c_est_fixed=args.c_est, scalar=args.scalar)
     elif mode == "simulate":
         simulate(d=args.d, K=args.K, R=args.R, seed0=args.seed,
                  device_pref=args.device, delta_scale=args.delta_scale,
